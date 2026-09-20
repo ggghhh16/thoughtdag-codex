@@ -17,6 +17,14 @@ This is an independently maintained community derivative of [ThoughtDAG](https:/
 - **Use the models available to your login.** Model, reasoning level and Fast availability come from the runtime; the app does not unlock unavailable account capabilities.
 - **Keep the canvas tools.** Attach PDF, DOCX, images, HTML or web snapshots; edit answers, retain answer versions, arrange branches, and export graph backups or Markdown.
 
+## Usability improvements in this fork
+
+- **Remember where you stopped reading.** Node cards, expanded answers, the side panel and material readers save their scroll positions locally. Return to a node or reopen the app to continue reading; answer versions keep separate positions.
+- **Organize the graph as a tree.** One action arranges conversation branches into a downward tree, aligns continuations and separates sibling branches. Material cards keep their positions, graph relationships stay intact, and the layout can be undone.
+- **Clearer connections between nodes.** Curved connections route around visible cards, while aligned nodes stay connected by straight lines. Select a connection to drag its curve, reset its shape, reverse its direction or delete it; curve adjustments are saved.
+- **Import and export conversations.** Import local Codex tasks in the desktop app, restore ThoughtDAG JSON backups, or import supported ChatGPT/Claude exports. Export the canvas as JSON for backup, or selected nodes and context chains as Markdown for reading and sharing.
+- **Reliable code-block copying.** Copy buttons extract the code text and preserve line breaks. A fallback supports desktop environments that deny the Clipboard API, restores focus and selection, and reports copy failures instead of showing false success.
+
 ### Relationship to ThoughtDAG
 
 | Area | This Codex integration |
