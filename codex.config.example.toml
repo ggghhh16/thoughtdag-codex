@@ -1,0 +1,8 @@
+# Merge the blocks you trust into your Codex config.toml. ThoughtDAG Codex
+# will only inherit them when both CODEX_ENABLE_MCP=true and the canvas MCP
+# toggle are enabled. External tools are outside the read-only file sandbox.
+
+[mcp_servers.thoughtdag_mock]
+command = "node"
+# Replace this with the absolute path in your clone.
+args = ["/absolute/path/to/thoughtdag-codex/scripts/mock-mcp.mjs"]

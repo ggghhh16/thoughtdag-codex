@@ -1,94 +1,96 @@
-# Setup & architecture
+# Codex setup and architecture
 
 [中文](./setup_ZH.md) · [Back to README](../README.md)
 
-## Quick start (in detail)
+## Requirements
 
-The fastest path is the [desktop app](https://chenxiachan.github.io/thoughtdag/#download): download, open, and click **Connect OpenRouter** (one authorization in your default browser mints a key, free-tier models included), or paste any provider key. Or do neither and browse the example canvas first. For a quick look without installing anything, the [web demo](https://app.thoughtdag.workers.dev) runs a feature subset in the browser; model traffic there runs browser-direct to the gateway, so keys never touch the demo's server. To run from source:
+- Node.js 22.12 or newer
+- npm
+- An authenticated Codex session or `CODEX_API_KEY`
+
+Codex App Server and the Codex SDK run in a local Node process. Pure static hosts and edge runtimes such as Cloudflare Workers cannot generate answers because they cannot spawn the Codex runtime.
+
+## Run from source
 
 ```bash
 npm install
-npm run server         # LLM proxy
-npm run dev            # → http://localhost:5173
+npm run codex:login
+npm run codex:status
+npm run server
 ```
 
-No config needed to start: if `.env` has no key, the app asks you to connect a model interface. Pick a provider and paste a key, hook up a locally running model (Ollama and friends), or point it at any custom OpenAI-compatible endpoint; the model list is fetched live from the endpoint, and keys stay in localStorage and the proxy's memory, never on disk. Or copy `.env.example` to `.env` and fill in any provider key; `ZHIPU_API_KEY` is free (open.bigmodel.cn). Outside China, pick the **Z.ai GLM** preset inside the app: the international twin of Zhipu, with the same free flash models and no CN phone number required (z.ai). OpenRouter also works as a one-key gateway with free-tier models. Note: consumer subscriptions (ChatGPT Plus, Claude Pro, Gemini Advanced) do not include API access; every provider sells API keys separately.
+In another terminal:
 
-The landing page seeds the example canvas in one labeled click: four chapters around one everyday question (why saved articles stay unread), from the conversation grammar to a real embedded PDF with its reading loop. Zoom out and you get the map view shown in the README. The fastest way in: drop a PDF on the landing page and start reading. Web search works keyless on local runs (the AnySearch anonymous tier, metered per your own IP); a Zhipu key upgrades the engine, and tiers switch in the model menu. Scholarly search (arXiv + Semantic Scholar) is free and needs no key at all.
-
-## Supported models
-
-Built on the Vercel AI SDK. Any provider below activates when its key lands in `.env`; or skip `.env` entirely and connect any OpenAI-compatible interface in the app (a local Ollama included). A toolbar picker switches models at any time. Text-only models keep the wheel when images appear: an already-read image participates through its companion text; only unread images hand the request to a vision model (announced, never silent). Default model IDs can be overridden per provider (e.g. `OPENAI_MODELS=gpt-5.2`).
-
-> Image understanding needs a vision key. Pasted images are auto-read once, by the strongest vision model you have configured, into editable companion text. The free `glm-4v-flash` works; flagship models read scientific figures noticeably better.
-
-| Provider | Default models | `.env` key | Notes |
-|----------|----------------|------------|-------|
-| **Zhipu GLM** | glm-4.5-flash · glm-4v-flash | `ZHIPU_API_KEY` | **Free**, CN-direct; powers web search. Intl: use the in-app Z.ai preset |
-| **Qwen** (DashScope) | qwen-plus · qwen-vl-plus | `DASHSCOPE_API_KEY` | CN-direct |
-| **OpenAI** | gpt-5.1 · gpt-5-mini | `OPENAI_API_KEY` | override via `OPENAI_MODELS` |
-| **Anthropic** | claude-sonnet-5 · claude-haiku-4-5 | `ANTHROPIC_API_KEY` | override via `ANTHROPIC_MODELS` |
-| **Google** | gemini-2.5-pro · gemini-2.5-flash | `GOOGLE_API_KEY` | override via `GOOGLE_MODELS` |
-| **DeepSeek** | deepseek-v4-flash · deepseek-v4-pro | `DEEPSEEK_API_KEY` | text-only (reads images via companion text) |
-| **Kimi** (Moonshot) | kimi-k2-turbo-preview · kimi-latest | `MOONSHOT_API_KEY` | CN-direct; intl via `MOONSHOT_BASE_URL` |
-| **OpenRouter** | openrouter/auto | `OPENROUTER_API_KEY` | gateway to 300+ models; list any `vendor/model` slugs in `OPENROUTER_MODELS` |
-| **Ollama** | (yours) | `OLLAMA_MODELS=qwen3:8b,…` | fully local & offline |
-
-> **Web search availability**: OpenRouter interfaces have it built in (the gateway's `:online` variant). Local runs always have it — the AnySearch anonymous tier searches keyless (per-IP daily quota; `ANYSEARCH_API_KEY` lifts it), and a GLM interface (Zhipu or Z.ai, a free key works) becomes the engine when connected. On the hosted app, non-`:online` models search through a connected GLM interface, or an AnySearch key added in the model menu (free signup). Scholarly search (arXiv + Semantic Scholar) needs nothing.
-
-## Subscriptions
-
-Metered API keys are not the only way in. Four subscription plans connect too, and the in-app presets carry the right endpoints:
-
-**ChatGPT plan (Plus/Pro)** connects through a community local bridge, and works in the desktop app and local runs (Node.js must be installed for the bridge itself):
-
-1. Run `npx openai-oauth@latest` in a terminal and sign in with your ChatGPT account once; the bridge listens at `127.0.0.1:10531`.
-2. Use the desktop app, or run ThoughtDAG locally (`npm run server` + `npm run dev`).
-3. In the app: model picker → add endpoint → **ChatGPT plan · local** → fetch models → save. Usage draws from your plan, with no metered bill. The web demo cannot reach your machine, so this path is desktop/local-only.
-
-Know the ground: the bridge is a community tool using your own account, and the provider's policy on third-party use can change — there are public reports of accounts suspended for third-party plan access. If that risk reads as too high, the subscription plans below and the one-click OpenRouter sign-in are the sanctioned doors.
-
-**GLM Coding plan**: the subscription issues a real API key against a dedicated endpoint (`/api/coding/paas/v4`, not the metered `/api/paas/v4`). Pick the **GLM Coding plan** preset, paste the key from your plan console, done. Works on the hosted app too.
-
-**Kimi Code plan**: same shape. Create a key in the Kimi Code console (up to 5), pick the **Kimi Code plan** preset, paste, done. `k3-256k` is the quota-friendly pick. Works on the hosted app too.
-
-**MiniMax Coding Plan**: pick the **MiniMax** preset and paste the plan key (coding-plan and metered keys share the endpoint). MiniMax publishes no model-list route, so the preset carries the catalog — the picker lists `MiniMax-M2.7` and friends without a probe. Works on the hosted app too.
-
-> Claude and Gemini subscriptions are absent deliberately: both providers prohibit third-party use of subscription credentials (enforced in 2026, with real account suspensions). Their metered API keys work normally via the regular presets.
-
-## Cost & privacy (in detail)
-
-- **Free to run.** The Zhipu free tier (GLM-4.5-Flash text + GLM-4V-Flash vision) covers every feature; agentic web search costs ~¥0.01/query. International users get the same free flash models through the in-app Z.ai GLM preset (z.ai). Or point it at any provider you already pay for, or a local Ollama model, fully offline.
-- **Your data stays with you.** Canvases live in your browser's storage; the only server is a thin proxy on your own machine. Nothing is uploaded anywhere except the LLM API you chose. On the hosted demo, model traffic runs browser-direct to the gateway, so keys and conversations never pass through the demo's server at all.
-- **Your PDFs stay local.** Dropped documents never leave your machine as files; only the extracted text travels, to the model API you picked, when you ask about them. Unpublished manuscripts are safe to read here.
-- **Losing the browser is not losing the work.** The automatic folder backup writes real `.thoughtdag.json` files to a folder you choose (Chromium browsers — Chrome, Edge, Arc; on Safari/Firefox use the one-click manual export). Backup format stays backward compatible, and Markdown export is the format-free escape hatch either way.
-- Optional: PDF page rendering wants poppler (`brew install poppler`); degrades gracefully to text without it.
-
-## Tech stack & architecture
-
-| Layer | Technology |
-|-------|------------|
-| UI | React 19 + TypeScript + Vite 7 |
-| Canvas | @xyflow/react (React Flow) |
-| State | Zustand (persist → IndexedDB via idb-keyval) |
-| Styling | Tailwind CSS v4 |
-| LLM | Vercel AI SDK: 9 provider families, auto-registered from `.env` keys |
-| Proxy | Express + Vercel AI SDK (server.mjs, default port 3001) |
-
-<details>
-<summary>Request flow</summary>
-
-```
-Browser (localhost:5173)
-  └─ React + React Flow canvas
-      └─ Zustand store (nodes, edges, history) ⇄ IndexedDB (auto-save)
-          ├─ buildContext(nodeId) → walk DAG → ContextMessage[] + images
-          └─ src/lib/api.ts
-              ├─ llmCallStream(messages) → POST /api/stream (SSE + tool events)
-              ├─ llmCall(messages)       → POST /api/claude (non-streaming, summaries)
-              └─ extractPdf(base64)      → POST /api/pdf-extract
-                        └─ Express + AI SDK (server.mjs) → Zhipu / Qwen / any provider
-                             └─ web_search tool (model-invoked, citations flow back)
+```bash
+npm run dev
 ```
 
-</details>
+Open <http://localhost:5173>. The Codex status entry reports ready, not logged in, or unavailable. Tokens, API keys, and auth-file contents are never returned to the browser.
+
+To use an API key instead of interactive login, copy `.env.example` to `.env` and set `CODEX_API_KEY`. Optional settings:
+
+| Variable | Purpose |
+|----------|---------|
+| `PORT` | Local proxy port; default `3001` |
+| `VITE_PUBLIC_VIEWER_ORIGIN` | Optional read-only share host; current origin by default |
+| `CODEX_HOME` | Use another Codex configuration directory |
+| `CODEX_ENABLE_MCP` | Set `true` to inherit user Codex MCP servers; off by default |
+| `CODEX_MAX_CONCURRENCY` | Concurrent generations, 1–8; default 3 |
+
+Restart `npm run server` after changing environment variables.
+
+## How graph cards map to Codex tasks
+
+Foreground Q&A uses persistent threads through the official Codex App Server. A card's active question/answer version maps to one turn, and every answer version stores its own Codex thread and turn IDs. The mapping preserves the DAG semantics rather than treating the latest task as one linear chat:
+
+- The first ordinary child resumes the parent's thread.
+- Another child of the same parent, or an explicit branch, forks the parent's thread at that exact parent turn.
+- Fan-in and legacy canvases without Codex IDs start a new thread seeded from the context selected by the current wires.
+- Before resuming, the adapter checks the anchor. If the official Codex client has appended turns after it, ThoughtDAG forks at the anchor instead of joining the two histories.
+
+Background summaries, memory judgments, condensing, and similar machine tasks are not part of the visible Q&A path. They continue to use isolated, one-shot SDK threads.
+
+```text
+React canvas
+  -> buildContext() walks the wired DAG
+  -> POST /api/stream (SSE) for foreground Q&A
+  -> App Server start / resume / fork + one persisted turn
+  -> POST /api/codex for an isolated non-streaming background task
+```
+
+On the same machine, using the same `CODEX_HOME` and login, these persisted foreground tasks are available to view and continue in the official Codex client. ThoughtDAG relies on the local Codex task store; it does not promise its own cross-device sync or visibility between different configuration directories.
+
+Codex defaults to a read-only sandbox with `approvalPolicy: "never"`. Without a selected project, the working directory is a request-scoped empty temporary directory. The desktop project menu can select, switch, or clear a native folder, then the toolbar chooses the boundary: Read only exposes bounded list/read/search MCP tools; Project access enables commands and adds only the selected project as a durable write root while command networking remains off; Full access removes filesystem/network sandboxing and requires a second confirmation. Read-only and project modes disable project instruction loading; full access can load local instructions, skills and hooks. Command environments use the runtime core environment policy. Background calls are separate threads and should not be treated as a stronger permission boundary than the selected mode. Images use a separate temporary directory and are removed after completion, failure, or cancellation.
+
+Global MCP servers are not inherited by default because external tools sit outside the filesystem sandbox and may have side effects. They require both `CODEX_ENABLE_MCP=true` and the canvas MCP toggle. Enable them only after auditing and trusting the active Codex configuration; `codex.config.example.toml` contains an optional mock-server example.
+
+## Model and web search
+
+The UI reads the live Codex App Server model catalog for the current login, including the default model, reasoning levels, and speed capabilities. Switching models resets an incompatible effort to Auto; Fast maps to Codex's priority service tier, Standard explicitly maps to default, and a model without Fast support safely runs at Standard. The server validates every selection again before generation. Legacy provider pins in imported canvases fall back safely without rewriting historical content or provenance.
+
+The canvas web-search toggle maps to Codex web search. Availability still depends on local Codex configuration, account, and policy. The app never silently falls back to an old provider or a browser-direct completion endpoint.
+
+## Data, authentication, and desktop builds
+
+- Canvases and the per-answer Codex thread/turn IDs remain in browser IndexedDB and retain `.thoughtdag.json` import/export compatibility.
+- The packaged desktop renderer uses the fixed loopback origin `http://127.0.0.1:31173`. On upgrade it performs a one-time merge of canvas and attachment records left under the legacy `31174` origin, so a transient port change no longer makes projects appear missing.
+- `#view=` payloads remain in the URL fragment. Without a configured public viewer, source-build links are intentionally local to the current origin; set `VITE_PUBLIC_VIEWER_ORIGIN` after publishing your own read-only host.
+- Documents are not sent to a hosted ThoughtDAG service. Only wire-selected text and request images enter the local Codex call path.
+- Source and desktop builds reuse the native Windows/macOS/Linux Codex login cache. Native Windows and WSL use different user directories; log in from the same environment that launches the app.
+- Only paths returned by the desktop native folder picker are registered with the local backend. The renderer and generation API receive a session-scoped opaque project ID, which expires when the service restarts.
+- The local service is loopback-only and must not be exposed directly to the public internet.
+
+## Verification
+
+```bash
+npm run test:codex   # deterministic fake stream; consumes no quota
+npm run build
+# While both `npm run server` and `npm run dev` are running:
+npm run smoke
+```
+
+A live answer requires a successful `npm run codex:status`. When logged out, the status endpoint and generation error are explicit and never switch models silently.
+
+## Local HTTP and proxy settings
+
+The server rejects non-loopback `HOST` values. Browser origins are limited to the server itself and loopback ports 5173/4173. For another development port, set an exact `THOUGHTDAG_ALLOWED_ORIGINS` value as shown in `.env.example`. This does not enable remote hosting. If a trusted local proxy uses fake-IP DNS, explicitly set `THOUGHTDAG_ALLOW_FAKE_IP=true`; leave it disabled on ordinary DNS.

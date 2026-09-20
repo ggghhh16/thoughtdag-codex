@@ -1,7 +1,7 @@
 import { set as idbSet } from 'idb-keyval';
 import { useStore, stripTransient } from '../store';
 import { getModelsOnce, reconcileModelId } from './use-models';
-import { useProjects, projectStorageKey, adoptImportedProject } from '../store/projects';
+import { useProjects, projectStorageKey, adoptImportedProject, switchProject } from '../store/projects';
 import { detectFormat, listConversations, type ImportableConversation } from './import-chat';
 import { isParadigmFile } from './paradigm';
 import { getContextPath } from './graph';
@@ -11,6 +11,7 @@ import { inlineVaultedContent, internNodes } from './attachment-vault';
 import { t, fmt } from '../i18n';
 import type { ThoughtNode, ThoughtEdge } from '../types';
 import type { ProjectMeta } from '../store/projects';
+import { detachCodexConversationLinks } from './codex-thread-import';
 
 export const EXPORT_FORMAT_VERSION = 1;
 // Must match the main store's persist `version` — a mismatched envelope
@@ -89,7 +90,10 @@ export async function parseImportFile(file: File): Promise<
   }
   if (isParadigmFile(parsed)) {
     const id = crypto.randomUUID();
-    const reconciled = await internNodes(await reconcileImportedModels(parsed.nodes));
+    // Paradigm JSON is just as untrusted as a canvas backup. Strip any local
+    // Codex identity before it reaches persistence, even though today's
+    // paradigm instantiator would normally discard those fields later.
+    const reconciled = await internNodes(await reconcileImportedModels(detachCodexConversationLinks(parsed.nodes)));
     await idbSet(projectStorageKey(id), JSON.stringify({ state: { nodes: reconciled, edges: parsed.edges }, version: PERSIST_VERSION }));
     await adoptImportedProject(id, parsed.name || 'Paradigm', 'paradigm');
     toast('success', fmt(t('toast.imported'), { name: parsed.name, n: parsed.nodes.length }));
@@ -126,24 +130,70 @@ function looksLikeCanvasNodes(nodes: unknown[]): boolean {
 }
 
 /** Convert selected chat conversations, one new project each. */
-export async function importChatConversations(convs: ImportableConversation[]): Promise<void> {
-  let firstId: string | null = null;
+const codexImportTails = new Map<string, Promise<void>>();
+
+/** Serialize imports of the same official task. Without this lock, two UI
+ *  triggers can both pass the metadata check while IndexedDB is still being
+ *  written and create duplicate canvases. Different tasks remain parallel. */
+export async function withCodexThreadImportLock<T>(threadId: string, action: () => Promise<T>): Promise<T> {
+  const previous = codexImportTails.get(threadId) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  codexImportTails.set(threadId, current);
+  await previous.catch(() => {});
+  try {
+    return await action();
+  } finally {
+    release();
+    if (codexImportTails.get(threadId) === current) codexImportTails.delete(threadId);
+  }
+}
+
+type ImportConversationOutcome =
+  | { kind: 'imported'; nodes: number }
+  | { kind: 'existing' }
+  | { kind: 'skipped' };
+
+async function importOneConversation(conv: ImportableConversation): Promise<ImportConversationOutcome> {
+  if (conv.codexThreadId) {
+    const existing = useProjects.getState().projects.find((p) => p.importedCodexThreadId === conv.codexThreadId);
+    if (existing) {
+      await switchProject(existing.id);
+      toast('info', fmt(t('toast.codexThreadAlreadyImported'), { name: existing.name }));
+      return { kind: 'existing' };
+    }
+  }
+  const { nodes, edges } = conv.build();
+  if (nodes.length === 0) return { kind: 'skipped' };
+  const id = crypto.randomUUID();
+  await idbSet(projectStorageKey(id), JSON.stringify({
+    state: { nodes: stripTransient(nodes), edges },
+    version: PERSIST_VERSION,
+  }));
+  await adoptImportedProject(id, conv.title.slice(0, 60), 'chat', {
+    importedCodexThreadId: conv.codexThreadId,
+  });
+  return { kind: 'imported', nodes: nodes.length };
+}
+
+export async function importChatConversations(convs: ImportableConversation[]): Promise<{ imported: number; openedExisting: number }> {
+  let imported = 0;
+  let openedExisting = 0;
   let total = 0;
   for (const conv of convs) {
-    const { nodes, edges } = conv.build();
-    if (nodes.length === 0) continue;
-    const id = crypto.randomUUID();
-    await idbSet(projectStorageKey(id), JSON.stringify({
-      state: { nodes: stripTransient(nodes), edges },
-      version: PERSIST_VERSION,
-    }));
-    await adoptImportedProject(id, conv.title.slice(0, 60));
-    firstId ??= id;
-    total += nodes.length;
+    const outcome = conv.codexThreadId
+      ? await withCodexThreadImportLock(conv.codexThreadId, () => importOneConversation(conv))
+      : await importOneConversation(conv);
+    if (outcome.kind === 'existing') openedExisting += 1;
+    if (outcome.kind === 'imported') {
+      imported += 1;
+      total += outcome.nodes;
+    }
   }
-  if (firstId) {
-    toast('success', fmt(t('toast.importedChats'), { n: convs.length, m: total }));
+  if (imported > 0) {
+    toast('success', fmt(t('toast.importedChats'), { n: imported, m: total }));
   }
+  return { imported, openedExisting };
 }
 
 /** Imported canvases carry the AUTHOR's model pins (e.g. gateway slugs);
@@ -195,14 +245,21 @@ export async function importProjectFromFile(file: File, pre?: unknown): Promise<
     if (!ok) return false;
   }
   const id = crypto.randomUUID();
-  const reconciled = await internNodes(await reconcileImportedModels(parsed.nodes));
+  const detachedCodexLinks = parsed.nodes.some((node) => node.data.codexThreadIds?.some(Boolean) || node.data.codexTurnIds?.some(Boolean));
+  // An interchange file is not proof that its Codex ids belong to this
+  // computer. Detach those links so a shared/malicious backup cannot resume
+  // or fork a task in the recipient's official client.
+  const reconciled = await internNodes(await reconcileImportedModels(detachCodexConversationLinks(parsed.nodes)));
   // Write in the zustand-persist envelope format so rehydration accepts it.
   await idbSet(projectStorageKey(id), JSON.stringify({
     state: { nodes: stripTransient(reconciled), edges: parsed.edges, ...(Array.isArray(parsed.events) ? { events: parsed.events } : {}) },
     version: PERSIST_VERSION,
   }));
   const name = parsed.name?.trim() || file.name.replace(/\.thoughtdag\.json$|\.json$/i, '') || 'Imported canvas';
-  await adoptImportedProject(id, name, 'chat', { instantiatedFrom: parsed.instantiatedFrom });
+  await adoptImportedProject(id, name, 'chat', {
+    instantiatedFrom: parsed.instantiatedFrom,
+  });
+  if (detachedCodexLinks) toast('info', t('toast.importCodexLinksDetached'), 9000);
   toast('success', fmt(t('toast.imported'), { name, n: parsed.nodes.length }));
   return true;
 }

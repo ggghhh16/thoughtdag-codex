@@ -22,6 +22,7 @@ import { llmCall } from '../../lib/api';
 // every other model feature; nothing ships until the user exports it.
 
 const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="14.5 2.5 22 39"><line x1="19" y1="10" x2="19" y2="18" stroke="#6B5CE7" stroke-width="2.5" stroke-linecap="round"/><line x1="19" y1="25" x2="19" y2="33" stroke="#6B5CE7" stroke-width="2.5" stroke-linecap="round"/><line x1="22.5" y1="23.5" x2="30" y2="28.5" stroke="#E08A3C" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="3 3"/><circle cx="19" cy="7" r="3.8" fill="#6B5CE7"/><circle cx="19" cy="21.5" r="3.8" fill="none" stroke="#6B5CE7" stroke-width="2.6"/><circle cx="19" cy="36.5" r="3.8" fill="#6B5CE7"/><circle cx="32.5" cy="30" r="3.4" fill="#E08A3C"/></svg>`;
+const LOGO_SVG_DARK = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="14.5 2.5 22 39"><line x1="19" y1="10" x2="19" y2="18" stroke="#58A6FF" stroke-width="2.5" stroke-linecap="round"/><line x1="19" y1="25" x2="19" y2="33" stroke="#58A6FF" stroke-width="2.5" stroke-linecap="round"/><line x1="22.5" y1="23.5" x2="30" y2="28.5" stroke="#D29922" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="3 3"/><circle cx="19" cy="7" r="3.8" fill="#58A6FF"/><circle cx="19" cy="21.5" r="3.8" fill="none" stroke="#58A6FF" stroke-width="2.6"/><circle cx="19" cy="36.5" r="3.8" fill="#58A6FF"/><circle cx="32.5" cy="30" r="3.4" fill="#D29922"/></svg>`;
 
 const KICKER = { zh: '一张思路地图', en: 'A THOUGHT MAP' };
 
@@ -150,8 +151,8 @@ function Artifact({ structure, positions, stats, title, subtitle, mapLang, paper
 
   const brand = (
     <div className="tmap-brand">
-      <span dangerouslySetInnerHTML={{ __html: LOGO_SVG }} style={{ display: 'contents' }} />
-      <div className="tmap-bt"><b>ThoughtDAG</b></div>
+      <span dangerouslySetInnerHTML={{ __html: paper === 'dark' ? LOGO_SVG_DARK : LOGO_SVG }} style={{ display: 'contents' }} />
+      <div className="tmap-bt"><b>ThoughtDAG Codex</b></div>
     </div>
   );
   return (
@@ -258,7 +259,7 @@ export default function ThoughtMapDialog() {
     setSigPos((localStorage.getItem('thoughtdag.tmapSigPos') as 'byline' | 'corner') || 'byline');
     setTitle(clampWeight(projectName, TITLE_MAX));
     setSubtitle('');
-    setCaption(`${fallbackCaption(uiLang, projectName || 'ThoughtDAG', stats)}\n\n${attributionLine()}`);
+    setCaption(`${fallbackCaption(uiLang, projectName || 'ThoughtDAG Codex', stats)}\n\n${attributionLine()}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -266,7 +267,7 @@ export default function ThoughtMapDialog() {
   const capTouched = useRef(false);
   useEffect(() => {
     if (!open || capTouched.current) return;
-    setCaption(`${fallbackCaption(capLang, title || 'ThoughtDAG', stats)}\n\n${attributionLine()}`);
+    setCaption(`${fallbackCaption(capLang, title || 'ThoughtDAG Codex', stats)}\n\n${attributionLine()}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [capLang, mapLang]);
 
@@ -345,7 +346,7 @@ export default function ThoughtMapDialog() {
     void navigator.clipboard.writeText(caption).catch(() => {});
     const cap = encodeURIComponent(caption);
     const site = encodeURIComponent(TMAP_SITE_URL);
-    const ttl = encodeURIComponent(title || 'ThoughtDAG');
+    const ttl = encodeURIComponent(title || 'ThoughtDAG Codex');
     const urls: Record<string, string> = {
       x: `https://twitter.com/intent/tweet?text=${cap}`,
       linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${site}`,

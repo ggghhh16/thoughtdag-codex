@@ -9,6 +9,22 @@ import type { ThoughtNode, ThoughtEdge } from '../types';
 export const isViewerMode =
   typeof window !== 'undefined' && window.location.hash.startsWith('#view=');
 
+function resolvePublicViewerOrigin(): string {
+  const current = typeof window !== 'undefined' && window.location.origin !== 'null'
+    ? window.location.origin
+    : '';
+  const configured = import.meta.env.VITE_PUBLIC_VIEWER_ORIGIN?.trim();
+  if (!configured) return current;
+  try {
+    return new URL(configured).origin;
+  } catch {
+    return current;
+  }
+}
+
+/** Public fork deployment when configured; otherwise this running app. */
+export const PUBLIC_VIEWER_ORIGIN = resolvePublicViewerOrigin();
+
 const b64url = {
   encode(bytes: Uint8Array): string {
     let bin = '';
@@ -33,7 +49,7 @@ export interface ViewerPayload {
   edges: ThoughtEdge[];
 }
 
-/** Serialize a graph into a shareable read-only URL (current origin + path). */
+/** Serialize a graph into a shareable read-only URL. */
 export async function buildViewerLink(nodes: ThoughtNode[], edges: ThoughtEdge[]): Promise<string> {
   const clean: ViewerPayload = {
     nodes: nodes.map((n) => ({
@@ -60,10 +76,7 @@ export async function buildViewerLink(nodes: ThoughtNode[], edges: ThoughtEdge[]
   };
   const bytes = new TextEncoder().encode(JSON.stringify(clean));
   const packed = await pipe(bytes, new CompressionStream('deflate-raw'));
-  // Always the PUBLIC viewer origin: a link minted on the desktop app or a
-  // dev server would otherwise point at localhost and open for nobody. The
-  // payload is self-contained, so any deployment of the app can render it.
-  return `https://app.thoughtdag.workers.dev/#view=${b64url.encode(packed)}`;
+  return `${PUBLIC_VIEWER_ORIGIN}/#view=${b64url.encode(packed)}`;
 }
 
 export async function decodeViewerHash(hash: string): Promise<ViewerPayload> {

@@ -1,18 +1,18 @@
 import { t } from '../i18n';
 
-// Known provider-dialect errors, translated into user language. Deliberately
+// Known upstream errors, translated into user language. Deliberately
 // narrow patterns only: a translation that fires on the wrong error is worse
 // than raw text. First hit wins.
 const KNOWN_ERRORS: Array<[RegExp, () => string]> = [
-  // a text-only endpoint rejecting image content blocks (DeepSeek's Rust
-  // deserializer says `unknown variant image_url`; others say "not support")
+  // A text-only endpoint rejecting image content blocks. Some deserializers say
+  // `unknown variant image_url`; others say "not support".
   [/unknown variant `?image_url`?|image_url.*(?:unsupported|not +support)|does not support image/i,
     () => t('error.textOnlyModelImages')],
 ];
 
 // Upstream error bodies arrive in two shapes: our proxy's { error: "text" }
-// and the OpenAI-style { error: { message, type } } nest that providers
-// return on direct calls. Flatten either to a human sentence — without this,
+// and a nested { error: { message, type } } form. Flatten either to a human
+// sentence — without this,
 // object payloads stringify into "[object Object]" toasts and the real
 // reason (e.g. "exceeded model token limit") never reaches the user.
 export function errorText(body: unknown, fallback: string): string {

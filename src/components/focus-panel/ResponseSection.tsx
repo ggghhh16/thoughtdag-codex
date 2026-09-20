@@ -60,6 +60,8 @@ export default function ResponseSection({
   const [editResponseValue, setEditResponseValue] = useState('');
   const [selectedText, setSelectedText] = useState('');
   const [selectionPos, setSelectionPos] = useState<{ x: number; y: number } | null>(null);
+  const generationMetadata = data.generationMetadatas?.[data.responseIndex] ?? data.generationMetadata;
+  const commentary = data.commentaries?.[data.responseIndex] ?? data.commentary;
   const responseRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<HTMLDivElement>(null);
 
@@ -164,7 +166,7 @@ export default function ResponseSection({
           <div className="py-1">
             <div className="text-2xs text-ink-faint mb-1">💭 {t('node.reasoningLive')}</div>
             <div ref={streamRef} className="text-xs text-ink-faint italic leading-relaxed whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto">
-              {data.reasoning.length > 4000 ? '…' + data.reasoning.slice(-4000) : data.reasoning}
+              {data.reasoning}
             </div>
           </div>
         ) : (
@@ -290,6 +292,12 @@ export default function ResponseSection({
         </div>
       )}
 
+      {commentary && <details className="text-xs text-ink-muted mt-3"><summary>执行过程 / Progress</summary><div className="whitespace-pre-wrap mt-2">{commentary}</div></details>}
+      {generationMetadata && <details className="text-xs text-ink-muted mt-3"><summary>生成记录 / Generation details · {generationMetadata.status}</summary><div className="mt-2 space-y-1">
+        <p>{generationMetadata.model} · {generationMetadata.reasoningEffort} · {generationMetadata.modelSpeed}</p>
+        {generationMetadata.usage && <p>Tokens: input {generationMetadata.usage.inputTokens}, output {generationMetadata.usage.outputTokens}, reasoning {generationMetadata.usage.reasoningTokens ?? '—'}</p>}
+        {generationMetadata.contextCompacted && <p>本轮发生了上下文压缩 / Context was compacted</p>}
+      </div></details>}
       {/* Web references consulted for this response */}
       {data.references && data.references.length > 0 && !data.isLoading && (
         <div className="mt-3 pt-2 border-t border-line/60">

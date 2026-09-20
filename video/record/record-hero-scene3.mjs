@@ -2,9 +2,10 @@
 // One continuous camera pull-back over a staged canvas, center locked.
 // Usage: node record-hero-scene3.mjs zh|en
 // Output: video/public/scene3-<lang>.mp4 (1600×900, h264, 30fps, ~8s).
-import { chromium } from '/Users/chatchan/Library/CloudStorage/Dropbox/Academic/1_Postdoc/ResearchIdeas/thoughtdag-main/node_modules/playwright-core/index.mjs';
+import { chromium } from 'playwright-core';
+import { fileURLToPath } from 'node:url';
 import { mkdirSync, rmSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 const LANG = process.argv[2];
 if (LANG !== 'zh' && LANG !== 'en') {
@@ -12,12 +13,12 @@ if (LANG !== 'zh' && LANG !== 'en') {
   process.exit(1);
 }
 
-const ROOT = '/Users/chatchan/Library/CloudStorage/Dropbox/Academic/1_Postdoc/ResearchIdeas/thoughtdag-main';
-const SCRATCH = '/private/tmp/claude-501/-Users-chatchan-Library-CloudStorage-Dropbox-Academic-1-Postdoc-ResearchIdeas-thoughtdag-main/8d9eb892-d9e7-4beb-b06f-d05137fa2c7a/scratchpad';
+const ROOT = fileURLToPath(new URL('../../', import.meta.url)).replace(/[\\/]$/, '');
+const SCRATCH = `${ROOT}/.local-e2e/hero-recording`;
 const RAW = `${SCRATCH}/scene3-raw-${LANG}`;
 const OUT = `${ROOT}/video/public/scene3-${LANG}.mp4`;
-const FFMPEG = '/opt/homebrew/bin/ffmpeg';
-const FFPROBE = '/opt/homebrew/bin/ffprobe';
+const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
+const FFPROBE = process.env.FFPROBE_PATH || 'ffprobe';
 rmSync(RAW, { recursive: true, force: true });
 mkdirSync(RAW, { recursive: true });
 
@@ -225,8 +226,8 @@ const webm = await video.path();
 const offset = Math.max(0, (tStart - tPageOpen) / 1000 - 0.25);
 const dur = (tEnd - tStart) / 1000 + 0.25;
 console.log(`raw=${webm} offset=${offset.toFixed(2)}s dur=${dur.toFixed(2)}s`);
-execSync(`${FFMPEG} -y -i "${webm}" -ss ${offset.toFixed(2)} -t ${dur.toFixed(2)} -c:v libx264 -pix_fmt yuv420p -crf 18 -r 30 -an "${OUT}"`, { stdio: 'inherit' });
-const probe = execSync(`${FFPROBE} -v error -show_entries format=duration,size -of default=noprint_wrappers=1 "${OUT}"`).toString();
+execFileSync(FFMPEG, ['-y', '-i', webm, '-ss', offset.toFixed(2), '-t', dur.toFixed(2), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-r', '30', '-an', OUT], { stdio: 'inherit' });
+const probe = execFileSync(FFPROBE, ['-v', 'error', '-show_entries', 'format=duration,size', '-of', 'default=noprint_wrappers=1', OUT]).toString();
 console.log(probe);
 const seconds = parseFloat(probe.match(/duration=([\d.]+)/)?.[1] ?? '0');
 if (seconds < 6) { console.error(`FAIL: scene3-${LANG}.mp4 only ${seconds}s (<6s)`); process.exit(1); }

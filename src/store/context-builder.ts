@@ -213,10 +213,13 @@ export function buildContext(
           images.push({ data: att.content, mimeType: att.type, ...(att.extractedText?.trim() ? { hasCompanion: true } : {}) });
         }
       } else if (att.type === 'application/pdf') {
-        // PDF: the extracted text IS the model channel. Page images never
-        // flow into generation — sending one per page trips provider image
-        // limits (Zhipu 1210) exactly on small PDFs; pages exist for the
-        // reader and its per-page Recognize, which writes better text here.
+        if (att.renderMode !== 'text-only') {
+          if (!att.pageImages?.length) messages.push({ role: 'user', content: `[PDF visual unavailable: ${att.name}]` });
+          for (const page of att.pageImages || []) images.push({ data: page, mimeType: 'image/png' });
+          messages.push({ role: 'user', content: `[PDF pages: ${att.name}; ${att.pageImages?.length || 0} page images, in page order]` });
+        }
+
+        // Preserve both the text layer and visual page evidence.
         if (att.extractedText) {
           messages.push({ role: 'user', content: `[PDF: ${att.name}]\n${att.extractedText}` });
         } else {

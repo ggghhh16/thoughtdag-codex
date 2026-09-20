@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useReadingPosition } from '../../lib/use-reading-position';
 import { createPortal } from 'react-dom';
 import { GitBranch, Loader2, Send, Star, X } from 'lucide-react';
 import { useStore } from '../../store';
@@ -22,6 +23,7 @@ export default function ResponseViewer() {
   const t = useT();
   const close = () => useUiStore.getState().setResponseViewerNodeId(null);
 
+  const readingRef = useReadingPosition(nodeId, `viewer:${node?.data.responseIndex ?? 0}`);
   const bodyRef = useRef<HTMLDivElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -118,7 +120,7 @@ export default function ResponseViewer() {
             <X size={16} strokeWidth={1.75} />
           </button>
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto px-8 py-6">
+        <div ref={readingRef} data-reading-surface="viewer" className="flex-1 min-h-0 overflow-y-auto px-8 py-6">
           <div className="max-w-[760px] mx-auto" ref={bodyRef}>
             {reasoning && <ReasoningDisclosure text={reasoning} />}
             {data.isLoading && (!data.response || data.restreaming) ? (

@@ -16,8 +16,9 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import 'highlight.js/styles/github.css';
-import { BookOpen, Brain, CircleHelp, Download, Drama, Eye, FileText, Frame, GitBranch, Highlighter, ImageDown, KeyRound, LayoutGrid, Loader2, MessageCircleQuestion, MoreHorizontal, Paperclip, Redo2, Scissors, Search, Share2, SquareTerminal, Stethoscope, StickyNote, Trash2, Undo2, Workflow, X, ListRestart, FolderSync, Minimize2, Rewind } from 'lucide-react';
+import { BookOpen, Brain, CircleHelp, Download, Drama, Eye, FileText, Frame, GitBranch, Highlighter, ImageDown, LayoutGrid, Loader2, MessageCircleQuestion, MoreHorizontal, Paperclip, Redo2, Scissors, Search, Share2, SquareTerminal, Stethoscope, StickyNote, Trash2, Undo2, Workflow, X, ListRestart, FolderSync, Minimize2, Rewind } from 'lucide-react';
 import './index.css';
+import { ArrowLeftRight } from 'lucide-react';
 import ThoughtNode from './components/ThoughtNode';
 import ParadigmNode from './components/ParadigmNode';
 import { useAppearance, edgePalette, LEGACY_EDGE_HEX } from './lib/appearance';
@@ -34,6 +35,7 @@ import DiagnosticsPanel from './components/DiagnosticsPanel';
 import MaterialReader from './components/MaterialReader';
 import ProjectSwitcher from './components/ProjectSwitcher';
 import { useStore } from './store';
+import { flushPendingWrites } from './lib/persistence';
 import { useProjects, adoptImportedProject, markInstantiatedFrom } from './store/projects';
 import { projectStorageKey } from './store/projects';
 import { set as idbSet } from 'idb-keyval';
@@ -51,7 +53,6 @@ import { buildExampleGraph } from './lib/example-graph';
 import { COLORS, FRAME_COLORS, PANEL_INSET } from './lib/constants';
 import { panelShift } from './lib/panel-shift';
 import { migrateActiveCanvasToVault, gcVaultAtBoot } from './lib/attachment-vault-boot';
-import { consumeOpenRouterCallback, handMintedKeyToModal, startOpenRouterOAuth } from './lib/openrouter-oauth';
 import { bootDesktopUpdateUI } from './lib/desktop-update-ui';
 import { confirmDialog, toast, useUiStore } from './lib/ui-store';
 import ConfirmDialog from './components/ui/ConfirmDialog';
@@ -68,11 +69,13 @@ import CondenseDialog from './components/ui/CondenseDialog';
 import { backupSupported } from './lib/local-backup';
 import LangSwitch from './components/ui/LangSwitch';
 import ModelPicker from './components/ui/ModelPicker';
+import ModelSpeedPicker from './components/ui/ModelSpeedPicker';
+import PermissionPicker from './components/ui/PermissionPicker';
 import RoleTemplateChips from './components/ui/RoleTemplateChips';
 import SearchToggles from './components/ui/SearchToggles';
 import Tutorial from './components/Tutorial';
 import { useT, t as ti, fmt, useI18n } from './i18n';
-import { isViewerMode, buildViewerLink } from './lib/viewer';
+import { isViewerMode, buildViewerLink, PUBLIC_VIEWER_ORIGIN } from './lib/viewer';
 import { useModels } from './lib/use-models';
 import { useZoomTier } from './lib/use-map-mode';
 import { TimelineBar } from './components/ui/TimelineBar';
@@ -140,21 +143,6 @@ export default function App() {
   // Desktop shell: update prompts render as in-app toasts (no-op on web)
   useEffect(() => { bootDesktopUpdateUI(); }, []);
 
-  // A pending Sign-in-with-OpenRouter callback (?code=) resolves here: the
-  // exchange runs entirely in the browser, then the ApiKeyModal opens on
-  // the model-picking view for the user to confirm what to enable.
-  useEffect(() => {
-    if (isViewerMode) return;
-    void consumeOpenRouterCallback().then((r) => {
-      if (!r) return;
-      if (r.status === 'minted') {
-        toast('success', ti('provider.oauthMinted'));
-        handMintedKeyToModal(r.key);
-      } else {
-        toast('error', fmt(ti('provider.oauthFailed'), { error: r.error }));
-      }
-    });
-  }, []);
   return (
     <>
       {hydrated && <Canvas />}
@@ -208,7 +196,7 @@ function Canvas() {
     return {
       mask: `rgba(${r},${g},${b},0.7)`,
       archived: cs.getPropertyValue('--color-wash').trim() || '#EFEDE9',
-      ordinary: resolvedTheme === 'dark' ? '#6E6759' : '#B9B3AB',
+      ordinary: resolvedTheme === 'dark' ? '#484F58' : '#B9B3AB',
     };
    
   }, [resolvedTheme]);
@@ -232,13 +220,13 @@ function Canvas() {
   const condenseBuilding = condenseRunState.status === 'building';
   const isParadigm = useProjects((s) => s.projects.find((p) => p.id === s.activeId)?.kind === 'paradigm');
 
-  // No configured model: do NOT ambush the first open with the key dialog —
-  // the example canvas needs no key and must be the first thing a newcomer
-  // sees. The dialog is summoned where it has context instead: the toolbar
-  // key button, the model picker, and the moment a generation actually
-  // needs a model (streaming.ts opens it on the no-model error).
+  // Connection status stays visible but never ambushes the first launch:
+  // the example canvas remains usable even when local Codex needs attention.
   const modelData = useModels();
-  void modelData;
+  const codexStatus = modelData?.capabilities?.status ?? modelData?.codex?.status;
+  const codexNeedsAttention = !modelData
+    || (modelData.models?.length ?? 0) === 0
+    || (codexStatus !== undefined && codexStatus !== 'ready');
 
   // Backup nudge: the canvas lives in browser storage — durable across
   // restarts, but "clear site data" erases it. A substantial canvas that
@@ -504,6 +492,11 @@ function Canvas() {
     (changes) => {
       const current = useStore.getState().nodes;
       setNodes(applyNodeChanges(changes, current) as typeof current);
+      // A completed drag/resize is durable immediately, including multi-select.
+      if (changes.some(c => (c.type === 'position' && c.dragging === false)
+        || (c.type === 'dimensions' && c.resizing === false))) {
+        void flushPendingWrites().catch(error => console.error('[thoughtdag] layout save failed:', error));
+      }
     },
     [setNodes]
   );
@@ -1123,9 +1116,9 @@ function Canvas() {
             // fades to paper, ordinary turns stay a readable mid-gray
             if (data.archived) return minimapColors.archived;
             const sk = data.stepKind as string | undefined;
-            if (sk === 'note') return '#D97706';
-            if (sk === 'file' || sk === 'link') return '#64748B';
-            if (Array.isArray(data.condensedFrom) && data.condensedFrom.length) return '#8B7CF0';
+            if (sk === 'note') return resolvedTheme === 'dark' ? '#D29922' : '#D97706';
+            if (sk === 'file' || sk === 'link') return resolvedTheme === 'dark' ? '#8B949E' : '#64748B';
+            if (Array.isArray(data.condensedFrom) && data.condensedFrom.length) return resolvedTheme === 'dark' ? '#BC8CFF' : '#8B7CF0';
             return data.isRoot ? themePalette.accent : data.isBranch ? themePalette.warm : minimapColors.ordinary;
           }}
           maskColor={minimapColors.mask}
@@ -1180,33 +1173,33 @@ function Canvas() {
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
           {/* Watermark: faint DAG sketches anchoring the corners */}
           <svg className="absolute -left-10 top-[8%] w-[360px] h-[300px] opacity-[0.35] pointer-events-none" viewBox="0 0 360 300" aria-hidden>
-            <path d="M80 40 C80 90 80 90 80 130 M80 170 C80 210 80 210 80 250" stroke={COLORS.line} strokeWidth="2" fill="none" />
-            <path d="M95 150 C150 150 150 90 205 88" stroke={COLORS.line} strokeWidth="2" strokeDasharray="6 5" fill="none" />
-            <circle cx="80" cy="30" r="7" fill={COLORS.line} />
-            <circle cx="80" cy="150" r="7" fill="none" stroke={COLORS.line} strokeWidth="2.5" />
-            <circle cx="80" cy="262" r="7" fill={COLORS.line} />
-            <circle cx="218" cy="88" r="7" fill={COLORS.line} />
+            <path d="M80 40 C80 90 80 90 80 130 M80 170 C80 210 80 210 80 250" stroke="var(--color-line)" strokeWidth="2" fill="none" />
+            <path d="M95 150 C150 150 150 90 205 88" stroke="var(--color-line)" strokeWidth="2" strokeDasharray="6 5" fill="none" />
+            <circle cx="80" cy="30" r="7" fill="var(--color-line)" />
+            <circle cx="80" cy="150" r="7" fill="none" stroke="var(--color-line)" strokeWidth="2.5" />
+            <circle cx="80" cy="262" r="7" fill="var(--color-line)" />
+            <circle cx="218" cy="88" r="7" fill="var(--color-line)" />
           </svg>
           <svg className="absolute right-[-30px] bottom-[10%] w-[320px] h-[280px] opacity-[0.35] pointer-events-none" viewBox="0 0 320 280" aria-hidden>
-            <path d="M240 30 C240 80 240 80 240 120 M240 160 C240 200 240 200 240 240" stroke={COLORS.line} strokeWidth="2" fill="none" />
-            <path d="M225 140 C170 140 170 210 115 212" stroke={COLORS.line} strokeWidth="2" strokeDasharray="6 5" fill="none" />
-            <circle cx="240" cy="20" r="7" fill={COLORS.line} />
-            <circle cx="240" cy="140" r="7" fill="none" stroke={COLORS.line} strokeWidth="2.5" />
-            <circle cx="240" cy="252" r="7" fill={COLORS.line} />
-            <circle cx="102" cy="212" r="7" fill={COLORS.line} />
+            <path d="M240 30 C240 80 240 80 240 120 M240 160 C240 200 240 200 240 240" stroke="var(--color-line)" strokeWidth="2" fill="none" />
+            <path d="M225 140 C170 140 170 210 115 212" stroke="var(--color-line)" strokeWidth="2" strokeDasharray="6 5" fill="none" />
+            <circle cx="240" cy="20" r="7" fill="var(--color-line)" />
+            <circle cx="240" cy="140" r="7" fill="none" stroke="var(--color-line)" strokeWidth="2.5" />
+            <circle cx="240" cy="252" r="7" fill="var(--color-line)" />
+            <circle cx="102" cy="212" r="7" fill="var(--color-line)" />
           </svg>
 
           <div className="pointer-events-auto w-[560px] animate-fade-in relative">
             <div className="text-center mb-8">
               {/* Mark: a tiny DAG lighting up — main chain in accent, explore branch in warm */}
               <svg width="52" height="52" viewBox="0 0 44 44" className="mx-auto mb-4" aria-hidden>
-                <circle className="dag-pop" style={{ animationDelay: '0.05s' }} cx="22" cy="7" r="3.5" fill={COLORS.accent} />
-                <line className="dag-pop" style={{ animationDelay: '0.2s' }} x1="22" y1="11" x2="22" y2="19" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" />
-                <circle className="dag-pop" style={{ animationDelay: '0.35s' }} cx="22" cy="22" r="3.5" fill="none" stroke={COLORS.accent} strokeWidth="2.5" />
-                <line className="dag-pop" style={{ animationDelay: '0.5s' }} x1="22" y1="25" x2="22" y2="33" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" />
-                <circle className="dag-pop" style={{ animationDelay: '0.65s' }} cx="22" cy="37" r="3.5" fill={COLORS.accent} opacity="0.35" />
-                <line className="dag-pop" style={{ animationDelay: '0.8s' }} x1="25.5" y1="23.5" x2="33" y2="28.5" stroke={COLORS.warm} strokeWidth="2" strokeLinecap="round" strokeDasharray="3 3" />
-                <circle className="dag-pop" style={{ animationDelay: '0.95s' }} cx="36" cy="30" r="3.5" fill={COLORS.warm} />
+                <circle className="dag-pop" style={{ animationDelay: '0.05s' }} cx="22" cy="7" r="3.5" fill="var(--color-accent)" />
+                <line className="dag-pop" style={{ animationDelay: '0.2s' }} x1="22" y1="11" x2="22" y2="19" stroke="var(--color-accent)" strokeWidth="2" strokeLinecap="round" />
+                <circle className="dag-pop" style={{ animationDelay: '0.35s' }} cx="22" cy="22" r="3.5" fill="none" stroke="var(--color-accent)" strokeWidth="2.5" />
+                <line className="dag-pop" style={{ animationDelay: '0.5s' }} x1="22" y1="25" x2="22" y2="33" stroke="var(--color-accent)" strokeWidth="2" strokeLinecap="round" />
+                <circle className="dag-pop" style={{ animationDelay: '0.65s' }} cx="22" cy="37" r="3.5" fill="var(--color-accent)" opacity="0.35" />
+                <line className="dag-pop" style={{ animationDelay: '0.8s' }} x1="25.5" y1="23.5" x2="33" y2="28.5" stroke="var(--color-warm)" strokeWidth="2" strokeLinecap="round" strokeDasharray="3 3" />
+                <circle className="dag-pop" style={{ animationDelay: '0.95s' }} cx="36" cy="30" r="3.5" fill="var(--color-warm)" />
               </svg>
               <h1 className="text-4xl font-semibold tracking-tight text-ink mb-2.5">ThoughtDAG</h1>
               <p className="text-sm text-ink-muted">{t('landing.tagline')}</p>
@@ -1343,51 +1336,26 @@ function Canvas() {
               ))}
             </div>
 
-            {/* Quick connect: the no-model landing offers the two free doors
-                side by side — GLM's free tier (zh only) and the one-click
-                OpenRouter OAuth (free-tier models included, key minted in
-                this browser) — plus one quiet line for subscription owners.
-                Gone once any model exists. */}
-            {(!modelData || (modelData.models?.length ?? 0) === 0) && (
+            {/* Codex is the only generation runtime. When it is unavailable,
+                keep one honest door into local connection status. */}
+            {codexNeedsAttention && (
               <div className="mt-3 bg-card/70 backdrop-blur border border-line/70 rounded-xl px-4 py-3 hover:border-line-strong transition-colors" data-quick-connect>
                 <div className="flex items-start gap-3">
-                  <KeyRound size={16} strokeWidth={1.75} className="text-accent shrink-0 mt-0.5" />
+                  <SquareTerminal size={16} strokeWidth={1.75} className="text-accent shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-xs font-semibold text-ink mb-0.5">{t('landing.quickTitle')}</h3>
-                    <p className="text-2xs text-ink-faint leading-relaxed">{t('landing.quickDesc')}</p>
+                    <h3 className="text-xs font-semibold text-ink mb-0.5">{t('landing.codexTitle')}</h3>
+                    <p className="text-2xs text-ink-faint leading-relaxed">{t('landing.codexDesc')}</p>
                   </div>
                 </div>
-                <div className="mt-2.5 pl-7 flex items-center flex-wrap gap-2">
-                  {lang === 'zh' && (
-                    <button
-                      onClick={() => { useUiStore.getState().setApiKeyPresetHint('zhipu'); useUiStore.getState().setApiKeyModalOpen(true); }}
-                      className="text-2xs bg-accent/10 text-accent hover:bg-accent/20 font-medium px-3 py-1.5 rounded-lg transition-colors shrink-0"
-                      data-quick-zhipu
-                    >
-                      {t('landing.quickZhipu')}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => void startOpenRouterOAuth()}
-                    className="text-2xs bg-accent/10 text-accent hover:bg-accent/20 font-medium px-3 py-1.5 rounded-lg transition-colors shrink-0"
-                    data-quick-primary
-                  >
-                    {t('landing.quickOpenRouter')}
-                  </button>
+                <div className="mt-2.5 pl-7">
                   <button
                     onClick={() => useUiStore.getState().setApiKeyModalOpen(true)}
-                    className="text-2xs text-ink-muted hover:text-ink hover:bg-wash font-medium px-3 py-1.5 rounded-lg transition-colors shrink-0"
+                    className="text-2xs bg-accent/10 text-accent hover:bg-accent/20 font-medium px-3 py-1.5 rounded-lg transition-colors shrink-0"
+                    data-codex-connection-entry
                   >
-                    {t('landing.quickOther')}
+                    {t('landing.codexOpen')}
                   </button>
                 </div>
-                <button
-                  onClick={() => useUiStore.getState().setApiKeyModalOpen(true)}
-                  className="mt-2 pl-7 text-2xs text-ink-faint hover:text-accent transition-colors block text-left"
-                  data-quick-subs
-                >
-                  {t('landing.quickSubs')}
-                </button>
               </div>
             )}
 
@@ -1479,9 +1447,7 @@ function Canvas() {
             <Download size={15} strokeWidth={1.75} />
           </button>
           <a
-            href="https://github.com/chenxiachan/thoughtdag"
-            target="_blank"
-            rel="noreferrer"
+            href={PUBLIC_VIEWER_ORIGIN || '/'}
             className="bg-ink text-white rounded-lg h-8 px-3 flex items-center gap-1.5 shadow-sm hover:bg-ink/85 transition-colors text-xs font-medium"
           >
             {t('viewer.openApp')}
@@ -1521,16 +1487,18 @@ function Canvas() {
           </>
         )}
         {!isParadigm && <ModelPicker />}
+        {!isParadigm && <ModelSpeedPicker />}
+        {!isParadigm && <PermissionPicker />}
         {/* Landing convenience only: inside the canvas the picker's own
             empty state (Connect a model) is the door — no twin key icon */}
         {!hasNodes && (
           <button
             onClick={() => useUiStore.getState().setApiKeyModalOpen(true)}
             className="bg-card/90 backdrop-blur border border-line rounded-lg w-8 h-8 flex items-center justify-center shadow-sm hover:bg-wash transition-colors text-ink-faint hover:text-accent"
-            title={t('apikey.entryTitle')}
-            data-apikey-entry
+            title={t('codex.connectionTitle')}
+            data-codex-connection-entry
           >
-            <KeyRound size={15} strokeWidth={1.75} />
+            <SquareTerminal size={15} strokeWidth={1.75} />
           </button>
         )}
         {/* Batch replay: visible only when something is stale. Price at the
@@ -1861,11 +1829,18 @@ function Canvas() {
           centerNode(n, { zoom: 1 });
         }
       }} />
-      {edgeMenu && (
+      {edgeMenu && !isViewerMode && (
         <div
           className="fixed z-50 bg-card border border-line rounded-xl shadow-lg py-1 min-w-[120px]"
           style={{ left: edgeMenu.x, top: edgeMenu.y }}
         >
+          <button
+            onClick={() => { useStore.getState().reverseEdge(edgeMenu.edgeId); setEdgeMenu(null); }}
+            title={t('edge.reverseTitle')}
+            className="w-full text-left px-4 py-2 text-sm text-ink-muted hover:bg-wash transition-colors flex items-center gap-1.5"
+          >
+            <ArrowLeftRight size={14} />{t('edge.reverse')}
+          </button>
           <button
             onClick={() => deleteEdge(edgeMenu.edgeId)}
             className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-1.5"

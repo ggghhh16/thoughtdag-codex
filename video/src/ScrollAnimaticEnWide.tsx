@@ -39,9 +39,7 @@ const STORY_TIMELINE = {
 } as const;
 
 export const SCROLL_ANIMATIC_EN_WIDE_DURATION = STORY_TIMELINE.end;
-export const SCROLL_ANIMATIC_EN_WIDE_SIZE = {width: W, height: H, fps: FPS};
 export const SCROLL_ANIMATIC_ZH_WIDE_DURATION = STORY_TIMELINE.end;
-export const SCROLL_ANIMATIC_ZH_WIDE_SIZE = {width: W, height: H, fps: FPS};
 
 const clamp = {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'} as const;
 const ink = '#17151f';
@@ -389,7 +387,7 @@ const SceneShell: React.FC<{
   );
 };
 
-const HookScene: React.FC = () => {
+export const HookScene: React.FC = () => {
   const frame = useCurrentFrame();
   const shock = spring({
     fps: FPS,
@@ -546,7 +544,7 @@ const ChatPanel: React.FC<{frame: number}> = ({frame}) => {
   );
 };
 
-const LinearScene: React.FC = () => {
+export const LinearScene: React.FC = () => {
   const frame = useCurrentFrame();
   return (
     <SceneShell frame={frame} duration={DURATIONS.linear} scaleFrom={1.04}>
@@ -571,7 +569,7 @@ const LinearScene: React.FC = () => {
   );
 };
 
-const BranchScene: React.FC = () => {
+export const BranchScene: React.FC = () => {
   const frame = useCurrentFrame();
   const camera = interpolate(frame, [0, 52, 150], [1.08, 1.02, 0.94], clamp);
   const pan = interpolate(frame, [0, 150], [40, -18], clamp);
@@ -810,7 +808,7 @@ const SourcePanel: React.FC<{frame: number; lang?: StoryLang}> = ({frame, lang =
   );
 };
 
-const SourcesScene: React.FC = () => {
+export const SourcesScene: React.FC = () => {
   const frame = useCurrentFrame();
   const cameraX = interpolate(frame, [0, 150], [30, -20], clamp);
   return (
@@ -878,7 +876,7 @@ const SourcesScene: React.FC = () => {
   );
 };
 
-const PruneScene: React.FC = () => {
+export const PruneScene: React.FC = () => {
   const frame = useCurrentFrame();
   const cut = reveal(frame, 92, 8);
   const before = 1 - reveal(frame, 102, 12);
@@ -1038,7 +1036,7 @@ const PruneScene: React.FC = () => {
   );
 };
 
-const MergeScene: React.FC = () => {
+export const MergeScene: React.FC = () => {
   const frame = useCurrentFrame();
   const zoom = interpolate(frame, [0, 60, 150], [1.07, 1, 0.95], clamp);
   return (
@@ -1155,7 +1153,7 @@ const MiniNode: React.FC<{x: number; y: number; color: string; width?: number}> 
   </div>
 );
 
-const ProtocolScene: React.FC = () => {
+export const ProtocolScene: React.FC = () => {
   const frame = useCurrentFrame();
   const map = reveal(frame, 2, 18);
   const zoom = interpolate(frame, [0, 80], [1.15, 0.88], clamp);
@@ -1212,7 +1210,7 @@ const ProtocolScene: React.FC = () => {
   );
 };
 
-const FinaleScene: React.FC = () => {
+export const FinaleScene: React.FC = () => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const logo = spring({

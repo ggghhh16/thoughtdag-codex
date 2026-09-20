@@ -5,28 +5,22 @@ import { Shorts, SHORTS_DURATION, SHORTS_SIZE } from './Shorts';
 import {
   ProductFilmZh,
   PRODUCT_FILM_ZH_DURATION,
-  PRODUCT_FILM_ZH_SIZE,
 } from './ProductFilmZh';
 import {
   StoryVerticalZh,
   STORY_VERTICAL_ZH_DURATION,
-  STORY_VERTICAL_ZH_SIZE,
 } from './StoryVerticalZh';
 import {
   ScrollAnimaticEn,
   ScrollAnimaticZh,
   SCROLL_ANIMATIC_EN_DURATION,
-  SCROLL_ANIMATIC_EN_SIZE,
   SCROLL_ANIMATIC_ZH_DURATION,
-  SCROLL_ANIMATIC_ZH_SIZE,
 } from './ScrollAnimaticZh';
 import {
   ScrollAnimaticEnWide,
   ScrollAnimaticZhWide,
   SCROLL_ANIMATIC_EN_WIDE_DURATION,
-  SCROLL_ANIMATIC_EN_WIDE_SIZE,
   SCROLL_ANIMATIC_ZH_WIDE_DURATION,
-  SCROLL_ANIMATIC_ZH_WIDE_SIZE,
 } from './ScrollAnimaticEnWide';
 import {
   ScrollAnimaticBrandEnWide,
@@ -40,8 +34,16 @@ import {
 import {
   OpeningPilotEn,
   OPENING_PILOT_EN_DURATION,
-  OPENING_PILOT_EN_SIZE,
 } from './OpeningPilotEn';
+import {
+  OPENING_PILOT_EN_SIZE,
+  PRODUCT_FILM_ZH_SIZE,
+  SCROLL_ANIMATIC_EN_SIZE,
+  SCROLL_ANIMATIC_EN_WIDE_SIZE,
+  SCROLL_ANIMATIC_ZH_SIZE,
+  SCROLL_ANIMATIC_ZH_WIDE_SIZE,
+  STORY_VERTICAL_ZH_SIZE,
+} from './compositionMetadata';
 
 export const Root: React.FC = () => (
   <>

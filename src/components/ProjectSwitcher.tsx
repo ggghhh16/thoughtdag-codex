@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Dna, FolderOpen, Loader2, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
-import { useProjects, switchProject, createProject, renameProject, deleteProject } from '../store/projects';
+import { ChevronDown, Copy, Dna, FolderCog, FolderOpen, Loader2, MessagesSquare, Pencil, Plus, RefreshCw, Trash2, Unlink, Upload } from 'lucide-react';
+import { useProjects, switchProject, createProject, duplicateProject, renameProject, deleteProject } from '../store/projects';
 import { useI18n } from '../i18n';
 import { parseImportFile } from '../lib/export';
 import ImportChatModal from './ImportChatModal';
+import CodexThreadImportModal from './CodexThreadImportModal';
 import type { ImportableConversation } from '../lib/import-chat';
-import { confirmDialog, toast } from '../lib/ui-store';
+import { codexThreadImportAvailable } from '../lib/codex-thread-import';
+import { confirmDialog, toast, useUiStore } from '../lib/ui-store';
+import { commitDesktopProject, ensureDesktopProjectHydrated } from '../lib/desktop-project';
 import { isImeComposing } from '../utils';
 import { useT, t as ti, fmt } from '../i18n';
 
@@ -29,10 +32,15 @@ export default function ProjectSwitcher({ onSwitched }: { onSwitched: () => void
   const activeIsParadigm = projects.find((p) => p.id === activeId)?.kind === 'paradigm';
   const [open, setOpen] = useState(false);
   const [chatImport, setChatImport] = useState<ImportableConversation[] | null>(null);
+  const [codexImportOpen, setCodexImportOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [folderBusy, setFolderBusy] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const codexProjectFolder = useUiStore((s) => s.codexProjectFolder);
+  const codexProjectHydrated = useUiStore((s) => s.codexProjectHydrated);
+  const permissionMode = useUiStore((s) => s.permissionMode);
 
   const active = projects.find((p) => p.id === activeId);
   const sorted = [...projects].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -47,10 +55,63 @@ export default function ProjectSwitcher({ onSwitched }: { onSwitched: () => void
     return () => window.removeEventListener('mousedown', handler);
   }, [open]);
 
+  useEffect(() => {
+    let mounted = true;
+    if (!window.desktop?.getProjectFolder) return;
+    void ensureDesktopProjectHydrated()
+      .catch((error) => {
+        if (mounted) toast('error', fmt(ti('projectFolder.failed'), { msg: error instanceof Error ? error.message : String(error) }));
+      });
+    return () => { mounted = false; };
+  }, []);
+
+  const chooseProjectFolder = async () => {
+    if (!window.desktop?.selectProjectFolder || folderBusy) return;
+    setFolderBusy(true);
+    try {
+      const result = await window.desktop.selectProjectFolder();
+      if (!result.canceled) {
+        commitDesktopProject(result.project);
+        if (result.project) toast('success', fmt(ti('projectFolder.selected'), { name: result.project.name }));
+      }
+    } catch (error) {
+      toast('error', fmt(ti('projectFolder.failed'), { msg: error instanceof Error ? error.message : String(error) }));
+    } finally {
+      setFolderBusy(false);
+    }
+  };
+
+  const clearProjectFolder = async () => {
+    if (!window.desktop?.clearProjectFolder || folderBusy) return;
+    setFolderBusy(true);
+    try {
+      await window.desktop.clearProjectFolder();
+      commitDesktopProject(null);
+      toast('success', ti('projectFolder.cleared'));
+    } catch (error) {
+      toast('error', fmt(ti('projectFolder.failed'), { msg: error instanceof Error ? error.message : String(error) }));
+    } finally {
+      setFolderBusy(false);
+    }
+  };
+
   const doSwitch = async (id: string) => {
     setOpen(false);
     await switchProject(id);
     onSwitched();
+  };
+
+  const doDuplicate = async (id: string) => {
+    setOpen(false);
+    try {
+      const copiedId = await duplicateProject(id);
+      if (copiedId) {
+        onSwitched();
+        toast('success', ti('switcher.copyCreated'));
+      }
+    } catch (error) {
+      toast('error', fmt(ti('switcher.copyFailed'), { msg: error instanceof Error ? error.message : String(error) }));
+    }
   };
 
   return (
@@ -60,14 +121,21 @@ export default function ProjectSwitcher({ onSwitched }: { onSwitched: () => void
       <button
         onClick={() => setOpen(!open)}
         disabled={switching}
-        className="bg-card/90 backdrop-blur border border-line rounded-xl px-3.5 py-2 shadow-sm hover:bg-wash transition-colors flex items-center gap-2 text-sm text-ink max-w-[240px] disabled:opacity-60"
+        className="bg-card/90 backdrop-blur border border-line rounded-xl px-3.5 py-2 shadow-sm hover:bg-wash transition-colors flex items-center gap-2 text-sm text-ink max-w-[300px] disabled:opacity-60"
       >
         {switching
           ? <Loader2 size={16} strokeWidth={1.75} className="animate-spin shrink-0 text-accent" />
           : activeIsParadigm
             ? <Dna size={16} strokeWidth={1.75} className="shrink-0 text-accent" />
             : <FolderOpen size={16} strokeWidth={1.75} className="shrink-0 text-ink-muted" />}
-        <span className="truncate font-medium">{active?.name ?? '…'}</span>
+        <span className="min-w-0 flex-1 text-left">
+          <span className="block truncate font-medium">{active?.name ?? '…'}</span>
+          {window.desktop?.selectProjectFolder && (
+            <span className="block truncate text-2xs text-ink-faint font-normal mt-0.5" title={codexProjectFolder?.path}>
+              {!codexProjectHydrated ? t('projectFolder.loading') : codexProjectFolder?.name ?? t('projectFolder.none')}
+            </span>
+          )}
+        </span>
         <ChevronDown size={14} strokeWidth={1.75} className="shrink-0 text-ink-faint" />
       </button>
 
@@ -112,6 +180,15 @@ export default function ProjectSwitcher({ onSwitched }: { onSwitched: () => void
                       <Pencil size={14} strokeWidth={1.75} />
                     </button>
                     <button
+                      title={t('switcher.duplicate')}
+                      aria-label={t('switcher.duplicate')}
+                      disabled={switching}
+                      className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-ink-faint hover:text-ink p-1 rounded transition-all shrink-0 disabled:opacity-50"
+                      onClick={(e) => { e.stopPropagation(); void doDuplicate(p.id); }}
+                    >
+                      <Copy size={14} strokeWidth={1.75} />
+                    </button>
+                    <button
                       title={t('common.delete')}
                       className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-red-500 p-1 rounded transition-all shrink-0"
                       onClick={(e) => {
@@ -145,6 +222,63 @@ export default function ProjectSwitcher({ onSwitched }: { onSwitched: () => void
             >
               <Upload size={15} strokeWidth={1.75} /> {t('switcher.importBackup')}
             </button>
+            {codexThreadImportAvailable() && (
+              <button
+                onClick={() => { setOpen(false); setCodexImportOpen(true); }}
+                className="w-full text-left px-3 py-2 text-sm text-ink-muted hover:bg-wash transition-colors flex items-center gap-2"
+                data-import-codex-thread
+              >
+                <MessagesSquare size={15} strokeWidth={1.75} /> {t('codexImport.menuEntry')}
+              </button>
+            )}
+            {window.desktop?.selectProjectFolder && (
+              <div className="border-t border-line mt-1 pt-1" data-project-folder-section>
+                <p className="px-3 pt-1.5 pb-1 text-2xs text-ink-faint uppercase tracking-wider font-medium">
+                  {t('projectFolder.title')}
+                </p>
+                <p className="px-3 pb-1.5 text-2xs text-ink-faint leading-relaxed">
+                  {permissionMode === 'readonly'
+                    ? t('permission.readonlyDesc')
+                    : permissionMode === 'workspace'
+                      ? t('permission.workspaceDesc')
+                      : t('permission.fullDesc')}
+                </p>
+                {codexProjectFolder && (
+                  <div className="mx-3 mb-1.5 px-2.5 py-2 rounded-lg bg-wash border border-line min-w-0" title={codexProjectFolder.path}>
+                    <p className="text-xs text-ink font-medium truncate flex items-center gap-1.5">
+                      <span className="truncate">{codexProjectFolder.name}</span>
+                      <span className={`text-2xs rounded px-1.5 py-0.5 shrink-0 ${permissionMode === 'full' ? 'text-orange-500 bg-orange-500/10' : 'text-accent bg-accent/10'}`}>
+                        {permissionMode === 'readonly'
+                          ? t('permission.readonly')
+                          : permissionMode === 'workspace'
+                            ? t('permission.workspace')
+                            : t('permission.full')}
+                      </span>
+                    </p>
+                    <p className="text-2xs text-ink-faint truncate mt-0.5">{codexProjectFolder.path}</p>
+                  </div>
+                )}
+                <button
+                  onClick={() => { setOpen(false); void chooseProjectFolder(); }}
+                  disabled={folderBusy}
+                  className="w-full text-left px-3 py-2 text-sm text-accent hover:bg-wash transition-colors flex items-center gap-2 disabled:opacity-60"
+                >
+                  {folderBusy
+                    ? <Loader2 size={15} strokeWidth={1.75} className="animate-spin" />
+                    : <FolderCog size={15} strokeWidth={1.75} />}
+                  {codexProjectFolder ? t('projectFolder.switch') : t('projectFolder.choose')}
+                </button>
+                {codexProjectFolder && (
+                  <button
+                    onClick={() => { setOpen(false); void clearProjectFolder(); }}
+                    disabled={folderBusy}
+                    className="w-full text-left px-3 py-2 text-sm text-ink-muted hover:bg-wash transition-colors flex items-center gap-2 disabled:opacity-60"
+                  >
+                    <Unlink size={15} strokeWidth={1.75} /> {t('projectFolder.clear')}
+                  </button>
+                )}
+              </div>
+            )}
             {window.desktop && (
               <button
                 onClick={() => { setOpen(false); void window.desktop!.checkForUpdates(); }}
@@ -186,6 +320,12 @@ export default function ProjectSwitcher({ onSwitched }: { onSwitched: () => void
           conversations={chatImport}
           onClose={() => setChatImport(null)}
           onDone={() => { setChatImport(null); onSwitched(); }}
+        />
+      )}
+      {codexImportOpen && (
+        <CodexThreadImportModal
+          onClose={() => setCodexImportOpen(false)}
+          onDone={() => { setCodexImportOpen(false); onSwitched(); }}
         />
       )}
     </div>

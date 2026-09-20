@@ -2,9 +2,9 @@
 
 /* ─── Design tokens ─────────────────────────────────────────────
    Single source of truth for the color system. The JS mirror lives in
-   src/lib/constants.ts (COLORS) — keep the two in sync.
-   Dark mode is intentionally not implemented yet; when it is, add a
-   `@media (prefers-color-scheme: dark)` block redefining these vars. */
+   src/lib/constants.ts (COLORS) — keep the light defaults in sync there.
+   Dark mode remaps every semantic token below to GitHub Dark / Primer-like
+   roles; components should consume roles, never dark-only literal colors. */
 @theme {
   /* Typography — self-hosted Inter (UI/body) + JetBrains Mono (data/code),
      loaded via @fontsource in main.tsx; CJK falls back to PingFang. */
@@ -33,6 +33,18 @@
   --color-warm: #E08A3C;         /* explore branches               */
   --color-trace: #F59E0B;        /* ancestor-path edge highlight   */
   --color-watch: #DC2626;        /* evaluator watch edges          */
+  --color-success: #1A7F37;      /* positive state / completion    */
+  --color-danger: #CF222E;       /* destructive / failure          */
+  --color-attention: #9A6700;    /* warnings / stale content       */
+  --color-done: #8250DF;         /* condensed / resolved state     */
+  --color-on-emphasis: #FFFFFF;  /* text and glyphs on solid fills */
+  --color-accent-emphasis: #5A4BD6;
+  --color-warm-emphasis: #B66A20;
+  --color-danger-emphasis: #D64533;
+  --color-danger-soft: #FCA5A5;
+  --color-attention-emphasis: #C9A227;
+  --color-attention-subtle: #FEF3C7;
+  --color-inverse-surface: #2B2A28;
 }
 
 :root {
@@ -53,56 +65,126 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  /* elevation is deliberate: cards sit a full step above the canvas
-     (1.22×, was 1.10× — they read as objects, not stains) */
-  --color-surface: #211E18;
-  --color-card: #322D25;
-  --color-wash: #3B352B;
-  --color-line: #4C4536;
-  --color-line-strong: #5E5645;
-  --color-ink: #EDE7DA;
-  --color-ink-muted: #B5AB97;
-  --color-ink-faint: #948A73;
-  --color-accent: #A79FF4;
-  --color-accent-strong: #B9B2F7;
-  --color-warm: #E3A45E;
-  --color-trace: #D9A83E;
-  --color-watch: #E0796F;
-  --canvas-dot: #423B2E;
-  --canvas-grid-fine: rgba(237, 231, 218, 0.05);
-  --canvas-grid-major: rgba(237, 231, 218, 0.11);
-  /* the tailwind semantic slices the UI actually uses, recomposed for dark
-     (utilities compile to var(--color-*), so this remaps them globally) */
-  --color-red-50: #3A2723;
-  --color-red-100: #47302A;
-  --color-red-200: #5C3B33;
-  --color-red-500: #E0796F;
-  --color-red-600: #E88A80;
-  --color-red-700: #F0A29A;
-  --color-green-50: #2A3A30;
-  --color-green-200: #3F5A48;
-  --color-green-600: #7FBF8E;
-  --color-green-700: #93CCA0;
-  --color-amber-50: #3B3220;
-  --color-amber-100: #4A3E26;
-  --color-amber-200: #5E4E2C;
-  --color-amber-400: #D9A83E;
-  --color-amber-500: #D9A83E;
-  --color-amber-600: #E2B558;
-  --color-amber-700: #EAC272;
-  --color-amber-800: #F2D18C;
+  /* GitHub Dark canvas hierarchy: canvas → surface → elevated/hover. */
+  --color-surface: #0D1117;
+  --color-card: #161B22;
+  --color-wash: #21262D;
+  --color-line: #30363D;
+  --color-line-strong: #484F58;
+  --color-ink: #F0F6FC;
+  --color-ink-muted: #8B949E;
+  --color-ink-faint: #848D97;
+  --color-accent: #58A6FF;
+  --color-accent-strong: #79C0FF;
+  --color-warm: #D29922;
+  --color-trace: #E3B341;
+  --color-watch: #F85149;
+  --color-success: #3FB950;
+  --color-danger: #F85149;
+  --color-attention: #D29922;
+  --color-done: #BC8CFF;
+  --color-on-emphasis: #FFFFFF;
+  --color-accent-emphasis: #1F6FEB;
+  --color-warm-emphasis: #9E6A03;
+  --color-danger-emphasis: #DA3633;
+  --color-danger-soft: #6E282D;
+  --color-attention-emphasis: #9E6A03;
+  --color-attention-subtle: #2B2111;
+  --color-inverse-surface: #21262D;
+  --canvas-dot: #30363D;
+  --canvas-grid-fine: rgba(139, 148, 158, 0.07);
+  --canvas-grid-major: rgba(139, 148, 158, 0.16);
+
+  /* Tailwind utilities compile through these variables. Recompose every
+     status family used by the app so dialogs, toast, readers and badges do
+     not leak the light palette into a dark scene. */
+  --color-red-50: #2D1518;
+  --color-red-100: #3D1A1F;
+  --color-red-200: #6E282D;
+  --color-red-300: #8E3538;
+  --color-red-400: #FF7B72;
+  --color-red-500: #F85149;
+  --color-red-600: #FF7B72;
+  --color-red-700: #FFA198;
+  --color-green-50: #12261E;
+  --color-green-100: #193A2A;
+  --color-green-200: #2A6643;
+  --color-green-500: #3FB950;
+  --color-green-600: #56D364;
+  --color-green-700: #7EE787;
+  --color-emerald-500: #3FB950;
+  --color-emerald-600: #56D364;
+  --color-amber-50: #2B2111;
+  --color-amber-100: #3D2D10;
+  --color-amber-200: #634B16;
+  --color-amber-300: #E3B341;
+  --color-amber-400: #E3B341;
+  --color-amber-500: #D29922;
+  --color-amber-600: #E3B341;
+  --color-amber-700: #F0C95C;
+  --color-amber-800: #F2CC60;
+  --color-blue-50: #0C2D4A;
+  --color-blue-100: #143D63;
+  --color-blue-600: #58A6FF;
+  --color-cyan-100: #123A42;
+  --color-cyan-600: #39C5CF;
+  --color-cyan-700: #76E3EA;
+  --color-sky-500: #58A6FF;
+  --color-sky-600: #79C0FF;
+  --color-teal-500: #39C5CF;
+  --color-violet-500: #BC8CFF;
+  --color-violet-600: #D2A8FF;
+  --color-rose-400: #FF7B72;
+  --color-slate-500: #8B949E;
+  --timeline-ruleout: #F85149;
+  --timeline-decision: #58A6FF;
+  --timeline-pivot: #D29922;
+  --timeline-open: #E3B341;
+  --timeline-insight: #79C0FF;
+  --timeline-muted: #484F58;
 }
 
-/* code highlighting flips with the theme (github.css is light-only) */
-:root[data-theme='dark'] .hljs { color: #D4CEC2; background: transparent; }
-:root[data-theme='dark'] .hljs-comment, :root[data-theme='dark'] .hljs-quote { color: #8A8170; }
-:root[data-theme='dark'] .hljs-keyword, :root[data-theme='dark'] .hljs-selector-tag, :root[data-theme='dark'] .hljs-subst { color: #C9A1F0; }
-:root[data-theme='dark'] .hljs-string, :root[data-theme='dark'] .hljs-regexp, :root[data-theme='dark'] .hljs-addition { color: #9FD0A5; }
-:root[data-theme='dark'] .hljs-number, :root[data-theme='dark'] .hljs-literal { color: #E3A45E; }
-:root[data-theme='dark'] .hljs-title, :root[data-theme='dark'] .hljs-name { color: #A7C7F2; }
-:root[data-theme='dark'] .hljs-attr, :root[data-theme='dark'] .hljs-attribute, :root[data-theme='dark'] .hljs-variable, :root[data-theme='dark'] .hljs-template-variable { color: #E0B070; }
-:root[data-theme='dark'] .hljs-built_in, :root[data-theme='dark'] .hljs-type { color: #7FBFB2; }
-:root[data-theme='dark'] .hljs-deletion { color: #E0796F; }
+/* GitHub Dark syntax palette (github.css itself is light-only). */
+:root[data-theme='dark'] .hljs { color: #E6EDF3; background: transparent; }
+:root[data-theme='dark'] .hljs-comment, :root[data-theme='dark'] .hljs-quote { color: #8B949E; }
+:root[data-theme='dark'] .hljs-keyword, :root[data-theme='dark'] .hljs-selector-tag, :root[data-theme='dark'] .hljs-subst { color: #FF7B72; }
+:root[data-theme='dark'] .hljs-string, :root[data-theme='dark'] .hljs-regexp, :root[data-theme='dark'] .hljs-addition { color: #A5D6FF; }
+:root[data-theme='dark'] .hljs-number, :root[data-theme='dark'] .hljs-literal { color: #79C0FF; }
+:root[data-theme='dark'] .hljs-title, :root[data-theme='dark'] .hljs-name { color: #D2A8FF; }
+:root[data-theme='dark'] .hljs-attr, :root[data-theme='dark'] .hljs-attribute, :root[data-theme='dark'] .hljs-variable, :root[data-theme='dark'] .hljs-template-variable { color: #FFA657; }
+:root[data-theme='dark'] .hljs-built_in, :root[data-theme='dark'] .hljs-type { color: #7EE787; }
+:root[data-theme='dark'] .hljs-deletion { color: #FF7B72; }
+
+/* Solid action fills use GitHub's emphasis colors while text/link utilities
+   keep the brighter foreground tokens above. Alpha variants are untouched. */
+:root[data-theme='dark'] .bg-accent { background-color: var(--color-accent-emphasis); }
+:root[data-theme='dark'] .hover\:bg-accent-strong:hover { background-color: #388BFD; }
+:root[data-theme='dark'] .bg-warm { background-color: var(--color-warm-emphasis); }
+:root[data-theme='dark'] .bg-watch { background-color: #DA3633; }
+:root[data-theme='dark'] .bg-red-500 { background-color: #DA3633; }
+:root[data-theme='dark'] .hover\:bg-red-600:hover,
+:root[data-theme='dark'] .bg-red-600 { background-color: #B62324; }
+:root[data-theme='dark'] .bg-green-600 { background-color: #238636; }
+:root[data-theme='dark'] .bg-blue-600 { background-color: #1F6FEB; }
+:root[data-theme='dark'] .bg-sky-500 { background-color: #1F6FEB; }
+:root[data-theme='dark'] .bg-cyan-600,
+:root[data-theme='dark'] .bg-teal-500 { background-color: #0E7490; }
+:root[data-theme='dark'] .bg-slate-500 { background-color: #484F58; }
+:root[data-theme='dark'] .bg-amber-400,
+:root[data-theme='dark'] .bg-amber-500 { background-color: #9E6A03; }
+:root[data-theme='dark'] .hover\:bg-amber-400:hover { background-color: #BB8009; }
+
+/* `ink` is a foreground role. A few legacy utilities also use it as an
+   inverse fill or modal scrim; keep those meanings explicit in dark mode. */
+:root[data-theme='dark'] .bg-ink.text-white {
+  background-color: var(--color-ink);
+  color: #0D1117;
+}
+:root[data-theme='dark'] .hover\:bg-ink\/85:hover { background-color: #C9D1D9; }
+:root[data-theme='dark'] .bg-ink\/25 { background-color: rgba(1, 4, 9, 0.72); }
+:root[data-theme='dark'] .bg-ink\/30 { background-color: rgba(1, 4, 9, 0.76); }
+:root[data-theme='dark'] .bg-ink\/60 { background-color: rgba(1, 4, 9, 0.80); }
+:root[data-theme='dark'] .hover\:bg-ink\/80:hover { background-color: rgba(1, 4, 9, 0.92); }
 
 /* ── thought map: the structure-only share artifact. A self-contained
    print design (its own light/dark), independent of the app theme —
@@ -116,8 +198,8 @@
 .tmap-art .tmap-head, .tmap-art .tmap-footrow { position: relative; z-index: 2; }
 .tmap-art.tmap-light { background: #F8F4EB; color: #1A1713;
   --tm-ink: #1A1713; --tm-ink-min: #C9C1B1; --tm-mut: #6B6355; --tm-faint: #8A8272; --tm-red: #C73E2E; --tm-edge: rgba(26, 23, 19, .5); }
-.tmap-art.tmap-dark { background: #201D17; color: #EDE7DA;
-  --tm-ink: #EDE7DA; --tm-ink-min: #57503F; --tm-mut: #B5AB97; --tm-faint: #8F8570; --tm-red: #E06A50; --tm-edge: rgba(237, 231, 218, .42); }
+.tmap-art.tmap-dark { background: #0D1117; color: #F0F6FC;
+  --tm-ink: #F0F6FC; --tm-ink-min: #30363D; --tm-mut: #8B949E; --tm-faint: #6E7681; --tm-red: #F85149; --tm-edge: rgba(139, 148, 158, .54); }
 .tmap-art.tmap-scroll { flex-direction: row; }
 .tmap-art.tmap-scroll .tmap-head { width: 200px; padding: 26px 0 22px 24px; display: flex; flex-direction: column; height: 100%; }
 .tmap-art.tmap-cover .tmap-head { padding: 24px 26px 0; }
@@ -202,6 +284,16 @@ code, pre {
   fill: var(--color-accent) !important;
 }
 
+:root[data-theme='dark'] .react-flow__controls,
+:root[data-theme='dark'] .react-flow__minimap {
+  box-shadow: 0 8px 24px rgba(1, 4, 9, 0.48) !important;
+}
+
+/* Handles are punched out of their card, not ringed in light-theme white. */
+:root[data-theme='dark'] .react-flow__handle.tdag-handle {
+  border-color: var(--color-card) !important;
+}
+
 .react-flow__minimap {
   background: var(--color-card) !important;
   border: 1px solid var(--color-line) !important;
@@ -235,7 +327,7 @@ code, pre {
 }
 
 /* Selection highlight */
-::selection { background: rgba(107, 92, 231, 0.2); }
+::selection { background: color-mix(in srgb, var(--color-accent) 28%, transparent); }
 
 /* Consistent keyboard-focus ring on buttons and disclosure controls.
    Text inputs are embedded borderless fields — their containers carry the
@@ -275,8 +367,8 @@ textarea:focus-visible {
 .loading-border { animation: pulse-border 1.5s ease-in-out infinite; }
 
 @keyframes pulse-selected {
-  0%, 100% { box-shadow: 0 0 0 3px rgba(107, 92, 231, 0.25); }
-  50% { box-shadow: 0 0 0 5px rgba(107, 92, 231, 0.12); }
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 25%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-accent) 12%, transparent); }
 }
 .selected-glow { animation: pulse-selected 2s ease-in-out infinite; }
 
@@ -308,6 +400,14 @@ textarea:focus-visible {
   border-color: var(--color-line-strong);
   box-shadow: 0 4px 14px rgba(0,0,0,0.09), 0 2px 4px rgba(0,0,0,0.05);
   transform: translateY(-1px);
+}
+
+:root[data-theme='dark'] .thought-node {
+  box-shadow: 0 1px 0 rgba(240, 246, 252, 0.04), 0 8px 24px rgba(1, 4, 9, 0.32);
+}
+
+:root[data-theme='dark'] .thought-node:hover {
+  box-shadow: 0 1px 0 rgba(240, 246, 252, 0.06), 0 12px 32px rgba(1, 4, 9, 0.46);
 }
 
 .root-node::before {
@@ -359,6 +459,11 @@ textarea:focus-visible {
   background: var(--color-card);
   border-radius: 14px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+:root[data-theme='dark'] .panel-card {
+  border: 1px solid var(--color-line);
+  box-shadow: 0 8px 24px rgba(1, 4, 9, 0.30);
 }
 
 /* Markdown body styles */
@@ -558,7 +663,7 @@ body.tdag-connecting, body.tdag-connecting * {
 .map-node.root-node { border-color: color-mix(in srgb, var(--color-accent) 85%, var(--color-line)); }
 .map-node.orange-node { border-color: color-mix(in srgb, var(--color-warm) 88%, var(--color-line)); }
 .map-node.evaluator-node { border-color: color-mix(in srgb, var(--color-watch) 82%, var(--color-line)); }
-.map-node.human-node { border-color: color-mix(in srgb, #d97706 82%, var(--color-line)); }
+.map-node.human-node { border-color: color-mix(in srgb, var(--color-attention) 82%, var(--color-line)); }
 
 /* Global fast tooltip (replaces the browser's sluggish native title) */
 .tdag-tooltip {
@@ -576,6 +681,10 @@ body.tdag-connecting, body.tdag-connecting * {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.10);
   animation: fade-in 0.12s ease;
   white-space: pre-line;
+}
+
+:root[data-theme='dark'] .tdag-tooltip {
+  box-shadow: 0 8px 24px rgba(1, 4, 9, 0.56);
 }
 
 /* ── Glyph tier (semantic zoom L3) ────────────────────────────── */
@@ -606,8 +715,8 @@ body.tdag-connecting, body.tdag-connecting * {
 
 /* ── Timeline bar (map/glyph tiers): recently-edited dots breathe ── */
 @keyframes tdag-timeline-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(107, 92, 231, 0.45); }
-  50% { box-shadow: 0 0 0 5px rgba(107, 92, 231, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 45%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-accent) 0%, transparent); }
 }
 .tdag-timeline-pulse { animation: tdag-timeline-glow 2s ease-in-out infinite; }
 .tdag-timeline { animation: fadeIn 0.25s ease; }
@@ -656,7 +765,7 @@ body.tdag-connecting, body.tdag-connecting * {
 
 /* feed-line flow: bright dots gliding inside the solid accent stroke */
 .tdag-flow-ov {
-  stroke: #fff; stroke-linecap: round; opacity: 0.9; pointer-events: none;
+  stroke: var(--color-on-emphasis); stroke-linecap: round; opacity: 0.9; pointer-events: none;
   stroke-width: calc(1.6px / clamp(0.15, var(--tdag-zoom, 1), 1));
   stroke-dasharray: calc(5px / clamp(0.15, var(--tdag-zoom, 1), 1)) calc(26px / clamp(0.15, var(--tdag-zoom, 1), 1));
   animation: tdag-flow 1.1s linear infinite;

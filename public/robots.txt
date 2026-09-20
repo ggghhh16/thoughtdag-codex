@@ -1,4 +1,4 @@
 User-agent: *
-Allow: /
+Disallow: /
 
-Sitemap: https://app.thoughtdag.workers.dev/sitemap.xml
+# Configure this fork's public origin before enabling indexing.

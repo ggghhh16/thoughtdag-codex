@@ -1,23 +1,30 @@
 {
-  "name": "thoughtdag-desktop",
+  "name": "thoughtdag-codex-desktop",
   "private": true,
-  "version": "0.3.32",
-  "description": "Desktop shell for ThoughtDAG — same app, same server, one window",
+  "version": "0.2.6",
+  "description": "Desktop shell for ThoughtDAG Codex",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "payload": "node scripts/prepare-payload.mjs",
-    "dist:mac": "npm run payload && electron-builder --mac dmg zip --arm64 --x64 --publish never",
-    "dist:win": "npm run payload && electron-builder --win nsis --x64 --publish never",
-    "dist:linux": "npm run payload && electron-builder --linux AppImage --x64 --publish never"
+    "payload:mac:x64": "node scripts/prepare-payload.mjs --platform=darwin --arch=x64",
+    "payload:mac:arm64": "node scripts/prepare-payload.mjs --platform=darwin --arch=arm64",
+    "payload:win:x64": "node scripts/prepare-payload.mjs --platform=win32 --arch=x64",
+    "payload:linux:x64": "node scripts/prepare-payload.mjs --platform=linux --arch=x64",
+    "dist:mac": "npm run dist:mac:x64 && npm run dist:mac:arm64",
+    "dist:mac:x64": "npm run payload:mac:x64 && electron-builder --mac dmg zip --x64 --publish never",
+    "dist:mac:arm64": "npm run payload:mac:arm64 && electron-builder --mac dmg zip --arm64 --publish never",
+    "dist:win": "npm run payload:win:x64 && electron-builder --win nsis --x64 --publish never",
+    "dist:linux": "npm run payload:linux:x64 && electron-builder --linux AppImage --x64 --publish never"
   },
   "devDependencies": {
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3"
   },
   "build": {
-    "appId": "io.github.chenxiachan.thoughtdag",
-    "productName": "ThoughtDAG",
+    "appId": "io.thoughtdag.codex",
+    "productName": "ThoughtDAG Codex",
+    "artifactName": "ThoughtDAG-Codex-${version}-${os}-${arch}.${ext}",
     "icon": "build/icon.png",
     "directories": {
       "output": "out"
@@ -38,18 +45,8 @@
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "arm64"
-          ]
-        }
+        "dmg",
+        "zip"
       ],
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
@@ -64,14 +61,6 @@
       "target": "AppImage",
       "category": "Office"
     },
-    "npmRebuild": false,
-    "publish": {
-      "provider": "github",
-      "owner": "chenxiachan",
-      "repo": "thoughtdag"
-    }
-  },
-  "dependencies": {
-    "electron-updater": "^6.8.9"
+    "npmRebuild": false
   }
 }

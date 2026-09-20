@@ -2,7 +2,6 @@ import type { Attachment } from '../types';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { generateId } from '../utils';
 import { extractPdf } from './api';
-import { PDF_VISION_PAGE_THRESHOLD } from './constants';
 import { internAttachment } from './attachment-vault';
 import { toast } from './ui-store';
 import { t } from '../i18n';
@@ -203,7 +202,7 @@ export async function processFile(file: File, cb: ProcessFileCallbacks): Promise
       extractedText: data.text,
       pageImages: images?.length ? images : undefined,
       numPages,
-      renderMode: numPages > PDF_VISION_PAGE_THRESHOLD ? 'text-only' : 'full',
+      renderMode: 'full',
       isExtracting: false,
     });
   } catch {
@@ -227,7 +226,7 @@ export async function processFile(file: File, cb: ProcessFileCallbacks): Promise
         extractedText: pages.join('\n\n').trim(),
         pageImages: images?.length ? images : undefined,
         numPages: doc.numPages,
-        renderMode: doc.numPages > PDF_VISION_PAGE_THRESHOLD ? 'text-only' : 'full',
+        renderMode: 'full',
         isExtracting: false,
       });
     } catch {

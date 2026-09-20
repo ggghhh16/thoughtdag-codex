@@ -19,6 +19,7 @@ const WRITE_DELAY_MS = 1000;
 
 let pending: { name: string; value: unknown } | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
+let inFlight: Promise<void> = Promise.resolve();
 
 function flush() {
   if (timer) {
@@ -28,25 +29,20 @@ function flush() {
   if (pending) {
     const { name, value } = pending;
     pending = null;
-    void idbSet(name, value);
+    inFlight = idbSet(name, value);
+    void inFlight.catch(error => console.error('[thoughtdag] save failed:', error));
   }
 }
 
 // Awaitable flush — used before switching projects so the outgoing
 // project's debounced write lands under its own key.
 export async function flushPendingWrites(): Promise<void> {
-  if (timer) {
-    clearTimeout(timer);
-    timer = null;
-  }
-  if (pending) {
-    const { name, value } = pending;
-    pending = null;
-    await idbSet(name, value);
-  }
+  flush();
+  await inFlight;
 }
 
 if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', flush);
   window.addEventListener('pagehide', flush);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flush();

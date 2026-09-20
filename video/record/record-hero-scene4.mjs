@@ -4,13 +4,14 @@
 // 2 min ago) → close → click "export backup (.json)" → success toast.
 // Usage: node record-hero-scene4.mjs [zh|en]   (default zh)
 // Output: video/public/scene4-<lang>.mp4 (1600×900, H.264, 30fps, ≥5.5s usable).
-import { chromium } from '/Users/chatchan/Library/CloudStorage/Dropbox/Academic/1_Postdoc/ResearchIdeas/thoughtdag-main/node_modules/playwright-core/index.mjs';
+import { chromium } from 'playwright-core';
+import { fileURLToPath } from 'node:url';
 import { mkdirSync, rmSync, readdirSync, statSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 const LANG = process.argv[2] === 'en' ? 'en' : 'zh';
-const ROOT = '/Users/chatchan/Library/CloudStorage/Dropbox/Academic/1_Postdoc/ResearchIdeas/thoughtdag-main';
-const RAW_DIR = `/tmp/hero-scene4-raw-${LANG}`;
+const ROOT = fileURLToPath(new URL('../../', import.meta.url)).replace(/[\\/]$/, '');
+const RAW_DIR = `${ROOT}/.local-e2e/hero-scene4-raw-${LANG}`;
 const OUT = `${ROOT}/video/public/scene4-${LANG}.mp4`;
 rmSync(RAW_DIR, { recursive: true, force: true });
 mkdirSync(RAW_DIR, { recursive: true });
@@ -158,12 +159,8 @@ await browser.close();
 const webm = readdirSync(RAW_DIR).find((f) => f.endsWith('.webm'));
 if (!webm) throw new Error('no webm recorded');
 const trim = Math.max(0, (tReady - t0) / 1000 - 0.4); // keep 0.4s of settled canvas
-execSync(
-  `/opt/homebrew/bin/ffmpeg -y -ss ${trim.toFixed(2)} -i ${RAW_DIR}/${webm} ` +
-  `-c:v libx264 -pix_fmt yuv420p -crf 18 -r 30 -an ${OUT}`,
-  { stdio: 'inherit' },
-);
-const dur = execSync(`/opt/homebrew/bin/ffprobe -v error -show_entries format=duration -of csv=p=0 ${OUT}`).toString().trim();
+execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', ['-y', '-ss', trim.toFixed(2), '-i', `${RAW_DIR}/${webm}`, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-r', '30', '-an', OUT], { stdio: 'inherit' });
+const dur = execFileSync(process.env.FFPROBE_PATH || 'ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', OUT]).toString().trim();
 const size = statSync(OUT).size;
 const at = (t) => Math.max(0, (t - t0) / 1000 - trim).toFixed(2);
 console.log(`scene4-${LANG}.mp4: ${dur}s, ${(size / 1024).toFixed(0)} KB (trimmed ${trim.toFixed(2)}s of staging)`);

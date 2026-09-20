@@ -187,7 +187,7 @@ function shellWrap(el: Element, inner: string): string {
 function pageDoc(styles: string, bodyHtml: string, bodyClass?: string | null, bodyStyle?: string | null): string {
   const cls = bodyClass ? ` class="${escapeAttr(bodyClass)}"` : '';
   const bst = bodyStyle ? ` style="${escapeAttr(bodyStyle)}"` : '';
-  return `<!doctype html><html><head><meta charset="utf-8">${styles}<style>${BASE_CSS}</style></head><body${cls}${bst}>${bodyHtml}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'"><meta name="referrer" content="no-referrer">${styles}<style>${BASE_CSS}</style></head><body${cls}${bst}>${bodyHtml}</body></html>`;
 }
 
 export async function buildReaderPages(source: string, opts?: HtmlSourceOptions): Promise<ReaderPage[]> {

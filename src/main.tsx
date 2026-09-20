@@ -1,3 +1,4 @@
+import GenerationInteractionDialog from './components/ui/GenerationInteractionDialog';
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/inter/index.css'
@@ -6,6 +7,7 @@ import App from './App'
 import { bootProjects } from './store/projects'
 import { isViewerMode, bootViewer } from './lib/viewer'
 import { initAppearance } from './lib/appearance'
+import { migrateDesktopLegacyStorage } from './lib/desktop-storage-migration'
 
 // Theme attributes land on <html> before first paint — no wrong-theme flash
 initAppearance()
@@ -13,15 +15,21 @@ initAppearance()
 // Resolve the active project and rehydrate the store before/while React
 // mounts — App's hydration gate opens when this finishes. A #view= link
 // boots read-only instead: graph from the URL, persistence silenced.
-if (isViewerMode) void bootViewer()
-else {
-  void bootProjects()
+async function bootAuthorMode(): Promise<void> {
+  // Desktop releases before the origin was fixed could store a second set of
+  // canvases under :31174. Merge it before the project store chooses and
+  // hydrates an active canvas.
+  await migrateDesktopLegacyStorage()
+  await bootProjects()
   // Ask the browser to mark this origin's storage persistent — exempts the
   // IndexedDB canvases from best-effort eviction under disk pressure.
   // Browsers grant it silently based on engagement; a refusal is harmless.
   if (navigator.storage?.persist) void navigator.storage.persist()
   void import('./lib/local-backup').then((m) => m.bootAutoBackup())
 }
+
+if (isViewerMode) void bootViewer()
+else void bootAuthorMode()
 
 // A long-lived tab keeps running the bundle it loaded; nudge when a newer
 // deploy lands (viewer tabs included — a shared link can sit open for days).
@@ -37,5 +45,6 @@ window.addEventListener('hashchange', () => {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
+    <GenerationInteractionDialog />
   </StrictMode>,
 )

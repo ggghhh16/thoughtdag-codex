@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useReadingPosition } from '../../lib/use-reading-position';
 import { X } from 'lucide-react';
 import { useStore } from '../../store';
 import { useUiStore } from '../../lib/ui-store';
@@ -67,6 +68,8 @@ export default function FocusPanel({ onFocusNode }: { onFocusNode?: (id: string)
 
   const node = nodes.find((n) => n.id === selectedNodeId);
 
+  const readingRef = useReadingPosition(selectedNodeId, `panel:${node?.data.responseIndex ?? 0}`);
+
   if (!node) {
     return null;
   }
@@ -126,7 +129,7 @@ export default function FocusPanel({ onFocusNode }: { onFocusNode?: (id: string)
       </div>
 
       {/* Scrollable content: one card per section */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5">
+      <div ref={readingRef} data-reading-surface="panel" className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5">
         <QuestionSection
           key={`q-${selectedNodeId}`}
           nodeId={selectedNodeId!}

@@ -2,26 +2,27 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; worker-src 'self' blob:; frame-src 'self' data: blob:; media-src 'self' data: blob: https:; object-src 'none'; base-uri 'self'; form-action 'self'" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ThoughtDAG</title>
-    <meta name="description" content="Wires are the context: an infinite canvas where LLM conversations grow into an editable thought graph. 连线即上下文。" />
-    <link rel="canonical" href="https://app.thoughtdag.workers.dev/" />
+    <title>ThoughtDAG Codex</title>
+    <meta name="description" content="Wires are the context: an infinite canvas where Codex conversations grow into an editable thought graph. 连线即上下文。" />
+    <!-- Configure this fork's canonical/public URLs before enabling indexing. -->
+    <meta name="robots" content="noindex,nofollow" />
     <!-- Link previews, English-first to match the card. og:image (type card,
          shrink-proof) serves WeChat / Slack / Discord; twitter:image (seal
          waterfall, atmospheric) serves the large summary card. Absolute
          URLs — scrapers resolve nothing. -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="ThoughtDAG — your thinking deserves a map" />
-    <meta property="og:description" content="Wires are the context: an infinite canvas where LLM conversations grow into an editable thought graph. No signup; the example canvas needs no key." />
-    <meta property="og:url" content="https://app.thoughtdag.workers.dev" />
-    <meta property="og:image" content="https://app.thoughtdag.workers.dev/og.jpg" />
+    <meta property="og:title" content="ThoughtDAG Codex — your thinking deserves a map" />
+    <meta property="og:description" content="Wires are the context: a local-first canvas where each request starts a fresh Codex thread." />
+    <meta property="og:image" content="/og.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="ThoughtDAG — Your thinking deserves a map" />
-    <meta name="twitter:description" content="Wires are the context: an infinite canvas where LLM conversations grow into an editable thought graph. No signup; the example canvas needs no key." />
-    <meta name="twitter:image" content="https://app.thoughtdag.workers.dev/og-twitter.jpg" />
+    <meta name="twitter:title" content="ThoughtDAG Codex — Your thinking deserves a map" />
+    <meta name="twitter:description" content="Wires are the context: a local-first canvas where each request starts a fresh Codex thread." />
+    <meta name="twitter:image" content="/og-twitter.jpg" />
   </head>
   <body>
     <div id="root"></div>

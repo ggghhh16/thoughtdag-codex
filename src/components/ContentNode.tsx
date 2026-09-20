@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Handle, NodeResizeControl, Position, useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
+import { ReverseHandles } from './ReverseHandles';
 import { BookOpen, ExternalLink, FileText, Link2, Link2Off, Loader2, MoveDiagonal2, Paperclip, RefreshCw, StickyNote, Trash2, X } from 'lucide-react';
 import type { ThoughtNode as ThoughtNodeType } from '../types';
 import { useStore } from '../store';
+import { useReadingPosition } from '../lib/use-reading-position';
 import { useZoomTier } from '../lib/use-map-mode';
 import { useUiStore } from '../lib/ui-store';
 import { triggerParadigmCascade } from '../store/streaming';
@@ -16,12 +18,13 @@ import { isViewerMode } from '../lib/viewer';
 // Content nodes: canvas material, not turns. A note (markdown), a file
 // (attachments) or a link (stamped web snapshot) that never generates — it
 // feeds downstream context ONLY via its outgoing edge (the One Rule), so it
-// has no target handle: nothing flows INTO material. autoLayout never moves
-// them. In a paradigm, an empty content node is a MATERIAL SLOT: the
+// exposes hidden target ports for explicit edge reversal. autoLayout never
+// moves materials. In a paradigm, an empty content node is a MATERIAL SLOT: the
 // cascade waits until the human fills it, like a human turn.
 
 export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNodeType>) {
   const t = useT();
+  const readingRef = useReadingPosition(id, 'content');
   const deleteNode = useStore((s) => s.deleteNode);
   const removeAttachment = useStore((s) => s.removeAttachment);
   const selectedNodeId = useStore((s) => s.selectedNodeId);
@@ -115,6 +118,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
         }`}>
           {kind === 'note' ? <StickyNote size={60} strokeWidth={2} /> : kind === 'link' ? <Link2 size={60} strokeWidth={2} /> : <FileText size={60} strokeWidth={2} />}
         </span>
+        <ReverseHandles glyph material large />
         <Handle type="source" position={Position.Bottom} id="continue" className="!bg-ink-faint !border-2 !border-white tdag-handle !w-6 !h-6 tdag-handle-lg" style={{ left: '50%' }} />
         {/* reader-grown branches leave through this handle — without it,
             React Flow drops those edges entirely at glyph zoom */}
@@ -141,7 +145,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
       }}
       onDragOver={(e) => { if (kind === 'file') { e.preventDefault(); e.stopPropagation(); } }}
     >
-      {/* Pure source: material feeds context, nothing flows INTO it — hence no target handle. */}
+      <ReverseHandles material large={zoomedOut} />
 
       {/* header: drag handle + identity + linked state + delete */}
       <div className={`flex items-center justify-between px-4 py-2 border-b cursor-grab active:cursor-grabbing drag-handle shrink-0 ${kind === 'note' ? 'border-amber-200/70' : 'border-line/70'}`}>
@@ -197,7 +201,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
 
       {/* Body: grows with content by default; when the card is resized the
           body becomes the scroll region (wheel scrolls text, not zoom) */}
-      <div className="px-4 py-3 nodrag flex-1 min-h-0 overflow-y-auto nowheel">
+      <div ref={readingRef} className="px-4 py-3 nodrag flex-1 min-h-0 overflow-y-auto nowheel">
         {kind === 'note' && (
           editing ? (
             <textarea

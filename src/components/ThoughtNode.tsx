@@ -1,9 +1,11 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Handle, Position, useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
+import { ReverseHandles } from './ReverseHandles';
 import { AlertTriangle, Archive, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Eye, GitBranch, Globe, Hourglass, Minimize2, Paperclip, RefreshCw, Send, Split, Square, Star, Trash2, UserRound, X, Pencil } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import type { ThoughtNode as ThoughtNodeType } from '../types';
 import { useStore } from '../store';
+import { useReadingPosition } from '../lib/use-reading-position';
 import { useZoomTier } from '../lib/use-map-mode';
 import { generateId, isImeComposing , activeSummary, activeTopic, awaitingInput, formatStamp } from '../utils';
 import { processFile } from '../lib/attachments';
@@ -59,6 +61,7 @@ export default function ThoughtNode({ id, data }: NodeProps<ThoughtNodeType>) {
   const [editValue, setEditValue] = useState(data.question);
   const [editResponseValue, setEditResponseValue] = useState(data.response);
   const responseRef = useRef<HTMLDivElement>(null);
+  const readingRef = useReadingPosition(id, `card:${data.responseIndex}`, responseRef);
   const nodeRef = useRef<HTMLDivElement>(null);
   const questionTaRef = useRef<HTMLTextAreaElement>(null);
   const addQuestion = useStore((s) => s.addQuestion);
@@ -368,6 +371,7 @@ export default function ThoughtNode({ id, data }: NodeProps<ThoughtNodeType>) {
           {t('focus.downstream')}
         </span>
       )}
+      <ReverseHandles glyph={glyphTier} large={zoomedOut} />
       <Handle type="target" position={Position.Top} id="top" className={`!bg-accent !border-2 !border-white tdag-handle ${zoomedOut ? '!w-6 !h-6 tdag-handle-lg' : '!w-3.5 !h-3.5'}`} />
       {/* Side anchors: NOT interaction targets — the system routes dashed
           reference edges through them so cross-chain lines never cut across
@@ -736,7 +740,7 @@ export default function ThoughtNode({ id, data }: NodeProps<ThoughtNodeType>) {
               <ReasoningDisclosure text={versionReasoning} />
             )}
             <div
-              ref={responseRef}
+              ref={readingRef} data-reading-surface="card"
               onClick={handleResponseClick}
               className="markdown-body text-sm text-ink leading-relaxed max-h-[400px] overflow-y-auto cursor-text nopan nodrag nowheel px-3 py-2.5 bg-surface rounded-xl"
             >

@@ -12,6 +12,20 @@ export interface ToastItem {
   action?: { label: string; run: () => void };
 }
 
+export interface CodexProjectFolder {
+  /** Opaque id registered by the desktop main process with the local server. */
+  id: string;
+  name: string;
+  /** Display-only path; generation requests send only id. */
+  path: string;
+}
+
+/** Permission boundary applied by the local Codex runtime for each request. */
+export type PermissionMode = 'readonly' | 'workspace' | 'full';
+
+/** Codex service tier used for model generations. */
+export type ModelSpeed = 'standard' | 'fast';
+
 interface ConfirmRequest {
   title?: string;
   message: string;
@@ -23,6 +37,9 @@ interface ConfirmRequest {
 const WEB_SEARCH_KEY = 'thoughtdag.webSearch';
 const SCHOLAR_SEARCH_KEY = 'thoughtdag.scholarSearch';
 const MODEL_KEY = 'thoughtdag.model';
+const REASONING_EFFORT_KEY = 'thoughtdag.reasoningEffort';
+const MODEL_SPEED_KEY = 'thoughtdag.modelSpeed';
+const PERMISSION_MODE_KEY = 'thoughtdag.permissionMode';
 const MCP_KEY = 'thoughtdag.mcpTools';
 const AUTO_PAUSE_KEY = 'thoughtdag.autoRefreshPaused';
 const HIDE_ANNOTATIONS_KEY = 'thoughtdag.hideAnnotations';
@@ -54,6 +71,16 @@ interface UiState {
   readerJump: { page?: number; threadId?: string } | null;
   /** Selected LLM id; null = server default. */
   selectedModel: string | null;
+  /** Selected Codex reasoning effort; null = selected model's default. */
+  selectedReasoningEffort: string | null;
+  /** Codex generation speed. Fast trades increased usage for lower latency. */
+  modelSpeed: ModelSpeed;
+  /** Codex filesystem / command boundary. Persisted independently of canvases. */
+  permissionMode: PermissionMode;
+  /** Desktop-only Codex working directory registration (session-scoped id). */
+  codexProjectFolder: CodexProjectFolder | null;
+  /** True after the desktop main process has restored (or confirmed no) project. */
+  codexProjectHydrated: boolean;
   dismissToast: (id: string) => void;
   resolveConfirm: (ok: boolean) => void;
   setTutorialOpen: (open: boolean) => void;
@@ -72,13 +99,6 @@ interface UiState {
   /** Image reading / Recognize model: 'auto' = strongest first (persisted). */
   visionModelPref: string;
   setVisionModelPref: (id: string) => void;
-  /** Web search engine: 'server' = follow the proxy's .env default. */
-  searchEnginePref: string;
-  setSearchEnginePref: (id: string) => void;
-  /** Optional AnySearch key: lifts the anonymous per-IP quota locally and
-      is REQUIRED for the engine on the hosted app. Stateless like model keys. */
-  anysearchKey: string;
-  setAnysearchKey: (key: string) => void;
   /** Ambient long-term memory: ON by default, one switch, visible writes. */
   memoryEnabled: boolean;
   setMemoryEnabled: (on: boolean) => void;
@@ -92,7 +112,7 @@ interface UiState {
   timelineOverviewOpen: boolean;
   setTimelineOverviewOpen: (open: boolean) => void;
   setMemoryManagerOpen: (open: boolean) => void;
-  /** Browser-side API key dialog (the .env-free path in). */
+  /** Codex connection dialog (historical field name retained for low-risk UI compatibility). */
   apiKeyModalOpen: boolean;
   setApiKeyModalOpen: (open: boolean) => void;
   /** Monotonic signal: each bump asks the global model picker to drop open
@@ -130,13 +150,6 @@ interface UiState {
   /** Paradigms and other lab features live behind this switch. */
   advancedMode: boolean;
   setAdvancedMode: (v: boolean) => void;
-  /** Preset the ApiKeyModal should open onto (landing quick-connect). */
-  apiKeyPresetHint: string | null;
-  setApiKeyPresetHint: (id: string | null) => void;
-  /** A freshly OAuth-minted OpenRouter key awaiting the user's model
-      confirmation in the ApiKeyModal (consumed on pickup, never stored). */
-  oauthMintedKey: string | null;
-  setOauthMintedKey: (key: string | null) => void;
   /** Node pulsing a beacon ripple (hovering "continue last thread"). */
   beaconNodeId: string | null;
   setBeaconNodeId: (id: string | null) => void;
@@ -152,6 +165,11 @@ interface UiState {
   setReaderNodeId: (id: string | null, jump?: { page?: number; threadId?: string }) => void;
   setPanelOpen: (open: boolean) => void;
   setSelectedModel: (model: string | null) => void;
+  setSelectedReasoningEffort: (effort: string | null) => void;
+  setModelSpeed: (speed: ModelSpeed) => void;
+  setPermissionMode: (mode: PermissionMode) => void;
+  setCodexProjectFolder: (project: CodexProjectFolder | null) => void;
+  setCodexProjectHydrated: (hydrated: boolean) => void;
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
@@ -160,14 +178,22 @@ export const useUiStore = create<UiState>((set, get) => ({
   tutorialOpen: false,
   webSearchEnabled: localStorage.getItem(WEB_SEARCH_KEY) !== 'off',
   scholarSearchEnabled: localStorage.getItem(SCHOLAR_SEARCH_KEY) !== 'off',
-  // MCP is parked until the personalization system is designed (external
-  // knowledge needs its own provenance surface first) — hidden AND off.
-  mcpEnabled: localStorage.getItem(MCP_KEY) === 'on',
+  // MCP defaults off and is surfaced only when /api/models reports the
+  // local Codex runtime was explicitly started with MCP enabled.
+  mcpEnabled: localStorage.getItem(MCP_KEY) !== 'off',
   autoRefreshPaused: localStorage.getItem(AUTO_PAUSE_KEY) === 'yes',
   annotationsHidden: localStorage.getItem(HIDE_ANNOTATIONS_KEY) === 'yes',
   panelOpen: false,
   panelWidth: (() => { const raw = localStorage.getItem('thoughtdag.panelWidth'); const n = raw ? parseInt(raw, 10) : NaN; return Number.isFinite(n) ? n : 520; })(),
   selectedModel: localStorage.getItem(MODEL_KEY) || null,
+  selectedReasoningEffort: localStorage.getItem(REASONING_EFFORT_KEY) || null,
+  modelSpeed: localStorage.getItem(MODEL_SPEED_KEY) === 'fast' ? 'fast' : 'standard',
+  permissionMode: (() => {
+    const saved = localStorage.getItem(PERMISSION_MODE_KEY);
+    return saved === 'readonly' || saved === 'workspace' || saved === 'full' ? saved : 'readonly';
+  })(),
+  codexProjectFolder: null,
+  codexProjectHydrated: !window.desktop?.getProjectFolder,
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
   resolveConfirm: (ok) => {
     get().confirmRequest?.resolve(ok);
@@ -209,17 +235,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   setVisionModelPref: (id) => {
     localStorage.setItem('thoughtdag.visionModel', id);
     set({ visionModelPref: id });
-  },
-  searchEnginePref: localStorage.getItem('thoughtdag.searchEngine') || 'server',
-  setSearchEnginePref: (id) => {
-    localStorage.setItem('thoughtdag.searchEngine', id);
-    set({ searchEnginePref: id });
-  },
-  anysearchKey: localStorage.getItem('thoughtdag.anysearchKey') || '',
-  setAnysearchKey: (key) => {
-    if (key) localStorage.setItem('thoughtdag.anysearchKey', key);
-    else localStorage.removeItem('thoughtdag.anysearchKey');
-    set({ anysearchKey: key });
   },
   memoryEnabled: localStorage.getItem('thoughtdag.memoryEnabled') !== 'off',
   setMemoryEnabled: (on) => {
@@ -267,10 +282,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   setCondenseRun: (patch) => set((s) => ({ condenseRun: { ...s.condenseRun, ...patch } })),
   advancedMode: localStorage.getItem('thoughtdag.advanced') === '1',
   setAdvancedMode: (v) => { localStorage.setItem('thoughtdag.advanced', v ? '1' : '0'); set({ advancedMode: v }); },
-  apiKeyPresetHint: null,
-  setApiKeyPresetHint: (id) => set({ apiKeyPresetHint: id }),
-  oauthMintedKey: null,
-  setOauthMintedKey: (key) => set({ oauthMintedKey: key }),
   beaconNodeId: null,
   setBeaconNodeId: (id) => set({ beaconNodeId: id }),
   setBackupDialogOpen: (v) => set({ backupDialogOpen: v }),
@@ -306,6 +317,21 @@ export const useUiStore = create<UiState>((set, get) => ({
     else localStorage.removeItem(MODEL_KEY);
     set({ selectedModel: model });
   },
+  setSelectedReasoningEffort: (effort) => {
+    if (effort) localStorage.setItem(REASONING_EFFORT_KEY, effort);
+    else localStorage.removeItem(REASONING_EFFORT_KEY);
+    set({ selectedReasoningEffort: effort });
+  },
+  setModelSpeed: (speed) => {
+    localStorage.setItem(MODEL_SPEED_KEY, speed);
+    set({ modelSpeed: speed });
+  },
+  setPermissionMode: (mode) => {
+    localStorage.setItem(PERMISSION_MODE_KEY, mode);
+    set({ permissionMode: mode });
+  },
+  setCodexProjectFolder: (project) => set({ codexProjectFolder: project }),
+  setCodexProjectHydrated: (hydrated) => set({ codexProjectHydrated: hydrated }),
 }));
 
 // Debug: expose the UI store for screenshot/e2e scripts (DEV only)

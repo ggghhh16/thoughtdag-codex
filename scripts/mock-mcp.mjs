@@ -1,8 +1,8 @@
 // Minimal stdio MCP server — used by the e2e suite and as a reference for
-// testing your own MCP wiring: put this in mcp.config.json and ask the
-// model for someone's "lucky number".
-//
-//   { "mcpServers": { "mock": { "command": "node", "args": ["scripts/mock-mcp.mjs"] } } }
+// testing your own Codex MCP wiring: merge the sample block from
+// codex.config.example.toml into your Codex config.toml, opt in with
+// CODEX_ENABLE_MCP=true, enable the canvas MCP toggle, and ask for a
+// person's "lucky number".
 //
 // Speaks newline-delimited JSON-RPC 2.0 per the MCP stdio transport spec.
 import readline from 'node:readline';

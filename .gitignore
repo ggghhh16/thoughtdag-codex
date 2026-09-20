@@ -6,11 +6,24 @@ npm-debug.log*
 # Dependencies
 node_modules
 .env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.codex/
+.maintenance/
+*.pem
+*.key
+*.p12
+*.pfx
+auth.json
+codex-project.json
 
 # Build
 dist
 dist-ssr
 *.local
+/server/bin/*.exe
 
 # Editor
 .vscode/*

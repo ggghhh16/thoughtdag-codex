@@ -1,6 +1,7 @@
 import { useStore } from '../store';
 import { collectTimeline, type TimelineEntry } from './timeline';
 import { generateGedankengang, getCached, graphFingerprint, type Gedankengang } from './gedankengang';
+import { PUBLIC_VIEWER_ORIGIN } from './viewer';
 
 // The Gedankengang poster: the timeline overview rendered as a manuscript
 // chronicle — paper ground, serif ink, badge seals strung on a spine, the
@@ -232,7 +233,8 @@ export async function drawGedankengangPoster({ title, journey, entries, lang }: 
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#7d6a45';
   ctx.font = `20px ${MONO}`;
-  ctx.fillText('ThoughtDAG · github.com/chenxiachan/thoughtdag', PAD + 90, fy);
+  const publicHost = (() => { try { return new URL(PUBLIC_VIEWER_ORIGIN).host; } catch { return PUBLIC_VIEWER_ORIGIN; } })();
+  ctx.fillText(`ThoughtDAG Codex${publicHost ? ` · ${publicHost}` : ''}`, PAD + 90, fy);
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/png');
@@ -259,7 +261,7 @@ export async function exportGedankengangPoster(
   }
   const root = nodes.find((n) => n.data.isRoot);
   const blob = await drawGedankengangPoster({
-    title: (root?.data.question ?? 'ThoughtDAG').replace(/\s+/g, ' ').slice(0, 80),
+    title: (root?.data.question ?? 'ThoughtDAG Codex').replace(/\s+/g, ' ').slice(0, 80),
     journey,
     entries: collectTimeline(nodes, 0),
     lang,

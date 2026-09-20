@@ -13,9 +13,6 @@ import {
 } from 'remotion';
 
 const FPS = 30;
-const W = 1080;
-const H = 1920;
-const GAP = 16;
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
 
 type Segment = {
@@ -119,7 +116,6 @@ export const PRODUCT_FILM_ZH_DURATION = segmentFrames.reduce(
   (sum, frames) => sum + frames,
   0,
 );
-export const PRODUCT_FILM_ZH_SIZE = { width: W, height: H, fps: FPS };
 
 const LogoMark: React.FC = () => (
   <div

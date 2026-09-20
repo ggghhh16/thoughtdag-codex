@@ -2,7 +2,7 @@ import type { StateCreator } from 'zustand';
 import type { ThoughtNode, ThoughtEdge } from '../../types';
 import { generateId, countTokens } from '../../utils';
 import { COLORS } from '../../lib/constants';
-import { autoLayout, estimateNodeHeight, nodeHeight } from '../../lib/layout';
+import { autoLayout, layoutNewNodes, estimateNodeHeight, nodeHeight } from '../../lib/layout';
 import { getDescendantIds, walkUpAncestors } from '../../lib/graph';
 import { referenceBlockContent, upstreamFingerprint, buildContext } from '../context-builder';
 import { pruneHighlights } from '../../lib/highlight-match';
@@ -10,6 +10,8 @@ import { toast } from '../../lib/ui-store';
 import { t, fmt } from '../../i18n';
 import type { StoreState, NodeSlice } from '../types';
 import { condenseGuard } from '../../lib/condense-guard';
+import { reversedEdge } from '../../lib/edge-edit';
+import { flushPendingWrites } from '../../lib/persistence';
 
 export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set, get) => ({
   nodes: [],
@@ -65,6 +67,11 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
                 summaryTypes: n.data.summaryTypes?.map((s, i) => (i === n.data.responseIndex ? undefined : s)),
                 // timeline: the human revised this version (generation stamp stays)
                 editedAts: n.data.responses.map((_, i) => (i === n.data.responseIndex ? new Date().toISOString() : n.data.editedAts?.[i])),
+                // The persisted Codex turn still contains the model's original
+                // answer. A human revision therefore cannot safely resume it;
+                // the next child will seed a fresh thread from canvas truth.
+                codexThreadIds: n.data.codexThreadIds?.map((value, i) => (i === n.data.responseIndex ? undefined : value)),
+                codexTurnIds: n.data.codexTurnIds?.map((value, i) => (i === n.data.responseIndex ? undefined : value)),
                 highlights: pruneHighlights(n.data.highlights, response),
                 isEditingResponse: false,
                 tokenCount,
@@ -148,7 +155,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
       target: id,
     } : null;
     const newEdges = newEdge ? [...get().edges, newEdge] : get().edges;
-    const newNodes = autoLayout([...get().nodes, newNode], newEdges);
+    const newNodes = layoutNewNodes([...get().nodes, newNode], newEdges, get().nodes);
     set({ nodes: newNodes, edges: newEdges, selectedNodeId: id });
     get().pushHistory();
   },
@@ -300,8 +307,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
         };
       }),
     }));
-    // Solid lines obey the arrow grammar — re-run the column tree
-    set((state) => ({ nodes: autoLayout(state.nodes, state.edges) }));
+    // Changing context wiring preserves the user-arranged canvas.
     get().pushHistory();
   },
 
@@ -321,6 +327,23 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     get().pushHistory();
   },
 
+  reverseEdge: (edgeId: string) => {
+    if (condenseGuard()) return false;
+    const result = reversedEdge(edgeId, get().nodes, get().edges);
+    if ('error' in result) {
+      toast('error', t(result.error === 'cycle' ? 'edge.reverseCycle' : result.error === 'duplicate' ? 'edge.reverseDuplicate' : 'edge.reverseMissing'));
+      return false;
+    }
+    get().pushHistory();
+    set(state => ({ edges: state.edges.map(e => e.id === edgeId ? result.edge : e) }));
+    get().logEvent('disconnect', edgeId, { reversed: true });
+    get().logEvent('connect', edgeId, { reversed: true });
+    get().pushHistory();
+    get().recomputeStaleness();
+    void flushPendingWrites().catch(error => console.error('[thoughtdag] reverse edge save failed:', error));
+    return true;
+  },
+
   navigateVersion: (nodeId: string, direction: 'prev' | 'next') => {
     set((state) => ({
       nodes: state.nodes.map((n) => {
@@ -333,7 +356,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
           ...n,
           // navigating away from a failed placeholder reclaims the older answer;
           // the question mirrors its version's wording (a version is a PAIR)
-          data: { ...n.data, responseIndex: newIndex, response: responses[newIndex], question: n.data.questions?.[newIndex] ?? n.data.question, generationFailed: undefined, highlights: pruneHighlights(n.data.highlights, responses[newIndex]) },
+          data: { ...n.data, responseIndex: newIndex, response: responses[newIndex], question: n.data.questions?.[newIndex] ?? n.data.question, generationMetadata: n.data.generationMetadatas?.[newIndex], commentary: n.data.commentaries?.[newIndex], generationFailed: n.data.generationMetadatas?.[newIndex]?.status && n.data.generationMetadatas[newIndex]?.status !== 'completed' ? true : undefined, highlights: pruneHighlights(n.data.highlights, responses[newIndex]) },
         };
       }),
     }));
@@ -358,10 +381,18 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
             question: n.data.questions?.filter((_, i) => i !== versionIndex)[newIndex] ?? n.data.question,
             summaries: n.data.summaries?.filter((_, i) => i !== versionIndex),
             generatedBy: n.data.generatedBy?.filter((_, i) => i !== versionIndex),
+            gatewaySearches: n.data.gatewaySearches?.filter((_, i) => i !== versionIndex),
             summaryTypes: n.data.summaryTypes?.filter((_, i) => i !== versionIndex),
             reasonings: n.data.reasonings?.filter((_, i) => i !== versionIndex),
             generatedAts: n.data.generatedAts?.filter((_, i) => i !== versionIndex),
             editedAts: n.data.editedAts?.filter((_, i) => i !== versionIndex),
+            codexThreadIds: n.data.codexThreadIds?.filter((_, i) => i !== versionIndex),
+            codexTurnIds: n.data.codexTurnIds?.filter((_, i) => i !== versionIndex),
+            generationMetadatas: n.data.generationMetadatas?.filter((_, i) => i !== versionIndex),
+            commentaries: n.data.commentaries?.filter((_, i) => i !== versionIndex),
+            generationMetadata: n.data.generationMetadatas?.filter((_, i) => i !== versionIndex)[newIndex],
+            commentary: n.data.commentaries?.filter((_, i) => i !== versionIndex)[newIndex],
+            generationFailed: n.data.generationMetadatas?.filter((_, i) => i !== versionIndex)[newIndex]?.status && n.data.generationMetadatas?.filter((_, i) => i !== versionIndex)[newIndex]?.status !== 'completed' ? true : undefined,
             highlights: pruneHighlights(n.data.highlights, newResponses[newIndex]),
           },
         };
@@ -373,8 +404,15 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
   relayout: () => {
     if (condenseGuard()) return;
     get().pushHistory();
-    set((state) => ({ nodes: autoLayout(state.nodes, state.edges) }));
+    set((state) => ({
+      nodes: autoLayout(state.nodes, state.edges),
+      edges: state.edges.map(e => ({ ...e,
+        ...(!e.data?.isCrossLink && !e.data?.isWatch ? { sourceHandle: 'continue', targetHandle: 'top' } : {}),
+        data: { ...e.data, routeBend: undefined, routeSide: undefined },
+      })),
+    }));
     get().pushHistory();
+    void flushPendingWrites().catch(error => console.error('[thoughtdag] tree layout save failed:', error));
   },
 
   setArchived: (nodeIds: string[], archived: boolean) => {

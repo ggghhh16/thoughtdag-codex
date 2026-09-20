@@ -1,4 +1,5 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { ReverseHandles } from './ReverseHandles';
 import { Globe, GraduationCap, MessageCircleQuestion, SquareTerminal, Trash2 } from 'lucide-react';
 import type { ThoughtNode as ThoughtNodeType, ThoughtData } from '../types';
 import { useStore } from '../store';
@@ -39,6 +40,7 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
 
   return (
     <div className={`bg-card border-2 border-dashed rounded-xl w-[440px] shadow-sm ${KIND_STYLES[kind]}`}>
+      <ReverseHandles />
       <Handle type="target" position={Position.Top} id="top" className="!bg-ink-faint !w-3.5 !h-3.5 !border-2 !border-white tdag-handle" />
       {/* Invisible side anchors: watch/reference edges route through these */}
       <Handle type="target" position={Position.Left} id="left" isConnectable={false} className="!bg-transparent !w-0 !h-0 !border-0 !pointer-events-none" style={{ top: '40%' }} />

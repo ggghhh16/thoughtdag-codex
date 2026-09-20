@@ -10,13 +10,14 @@
 // clear horizontal gap. Positions are computed from MEASURED card heights so
 // the B→C smoothstep's horizontal run lands in the empty band between A's
 // bottom edge and C's top edge in both languages.
-import { chromium } from '/Users/chatchan/Library/CloudStorage/Dropbox/Academic/1_Postdoc/ResearchIdeas/thoughtdag-main/node_modules/playwright-core/index.mjs';
+import { chromium } from 'playwright-core';
+import { fileURLToPath } from 'node:url';
 import { mkdirSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 const LANG = process.argv[2] === 'en' ? 'en' : 'zh';
-const ROOT = '/Users/chatchan/Library/CloudStorage/Dropbox/Academic/1_Postdoc/ResearchIdeas/thoughtdag-main';
-const SCRATCH = `/private/tmp/claude-501/-Users-chatchan-Library-CloudStorage-Dropbox-Academic-1-Postdoc-ResearchIdeas-thoughtdag-main/8d9eb892-d9e7-4beb-b06f-d05137fa2c7a/scratchpad/scene2-${LANG}`;
+const ROOT = fileURLToPath(new URL('../../', import.meta.url)).replace(/[\\/]$/, '');
+const SCRATCH = `${ROOT}/.local-e2e/hero-recording`;
 const OUT = `${ROOT}/video/public/scene2-${LANG}.mp4`;
 mkdirSync(SCRATCH, { recursive: true });
 
@@ -220,6 +221,6 @@ await browser.close();
 
 // ── Transcode: trim the setup lead, webm → H.264 mp4 ─────────────────────
 const offset = Math.max(0, (tScene - tRec) / 1000 - 0.2);
-execSync(`/opt/homebrew/bin/ffmpeg -y -ss ${offset.toFixed(2)} -i "${webm}" -c:v libx264 -pix_fmt yuv420p -crf 18 -r 30 -movflags +faststart "${OUT}"`, { stdio: 'inherit' });
-const probe = execSync(`/opt/homebrew/bin/ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 "${OUT}"`).toString().trim();
+execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', ['-y', '-ss', offset.toFixed(2), '-i', webm, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-r', '30', '-movflags', '+faststart', OUT], { stdio: 'inherit' });
+const probe = execFileSync(process.env.FFPROBE_PATH || 'ffprobe', ['-v', 'error', '-show_entries', 'format=duration,size', '-of', 'default=noprint_wrappers=1', OUT]).toString().trim();
 console.log(`scene2-${LANG}.mp4 → ${probe}`);

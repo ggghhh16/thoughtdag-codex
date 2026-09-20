@@ -20,9 +20,12 @@ Early discussion avoids duplicate work and confirms that the proposed behavior f
 
 ## Development setup
 
+Install Node.js 22.12 or newer and authenticate Codex before running a live generation:
+
 ```bash
 npm install
-npm run server   # LLM proxy on :3001
+npm run codex:login
+npm run server   # Codex proxy on :3001
 npm run dev      # Vite app on :5173
 ```
 
@@ -30,9 +33,12 @@ Before submitting, run the checks relevant to your change:
 
 ```bash
 npm run lint
+npm run test:codex
 npm run build
 npm run smoke
 ```
+
+The adapter test uses a fake event stream and consumes no Codex quota. For desktop work, also run `npm --prefix desktop ci` before the relevant payload/build command.
 
 If a check cannot be run or has an unrelated pre-existing failure, explain that clearly in the pull request.
 

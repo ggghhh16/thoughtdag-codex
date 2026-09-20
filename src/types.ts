@@ -49,6 +49,10 @@ export interface ThoughtData extends Record<string, unknown> {
   isEditing: boolean;
   isEditingResponse: boolean;
   isLoading: boolean;
+  generationMetadata?: import('./lib/api').CodexStreamMetadata;
+  generationMetadatas?: (import('./lib/api').CodexStreamMetadata | undefined)[];
+  commentaries?: (string | undefined)[];
+  commentary?: string;
   generationFailed?: boolean; // set on LLM failure; cleared on retry/success (persisted so Retry survives refresh)
   references?: Reference[]; // web sources cited by the current response ([n] markers)
   model?: string; // per-node LLM override; undefined = follow the global picker
@@ -109,8 +113,14 @@ export interface ThoughtData extends Record<string, unknown> {
       Recorded at generation time so switching the global model later never
       obscures where an old answer came from. */
   generatedBy?: (string | undefined | null)[];
-  /** Per version: this answer used the model gateway's built-in web search
-      (no tool pings from the proxy, so the stream flags it once instead). */
+  /** Codex App Server conversation provenance per answer version. A DAG card
+      is one turn; cards on the same mainline normally share a thread, while
+      graph branches fork it at the parent turn. Older canvases simply omit
+      these arrays and start a fresh Codex thread on their next generation. */
+  codexThreadIds?: (string | undefined | null)[];
+  codexTurnIds?: (string | undefined | null)[];
+  /** Per version: this answer used web search. The historical field name is
+      retained for imported-canvas compatibility. */
   gatewaySearches?: (boolean | undefined)[];
   /** Epistemic move per version: insight (default, unmarked) | ruleout |
       decision | pivot | open. Auto-labeled by the takeaway judge; display
@@ -171,6 +181,10 @@ export type ThoughtNode = Node<ThoughtData, 'thought'>;
 
 export interface ThoughtEdge extends Edge {
   data?: {
+    /** Visual routing preference only. Left/right means above/below for side handles. */
+    routeSide?: 'auto' | 'left' | 'right';
+    /** Draggable curve midpoint, relative to the midpoint of its endpoints. */
+    routeBend?: { x: number; y: number };
     isCrossLink?: boolean;
     isBranchFromSelection?: boolean;
     /** Watch edge: watched node → evaluator. Treated as a cross-link for

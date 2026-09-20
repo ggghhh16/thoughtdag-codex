@@ -1,171 +1,90 @@
-<div align="center">
+# ThoughtDAG Codex
 
-<img src="public/favicon.svg" width="72" alt="ThoughtDAG logo"/>
+**A local Codex workspace with an editable conversation canvas.**
 
-# ThoughtDAG
+Branch a Codex conversation, attach source material, choose the context for the next question, and continue a task from the graph. ThoughtDAG Codex connects the ThoughtDAG canvas to the official Codex App Server and SDK.
 
-**Your thinking deserves a map.** An infinite canvas where LLM conversations grow into an editable thought graph.
+This is an independently maintained community derivative of [ThoughtDAG](https://github.com/chenxiachan/thoughtdag), not an official OpenAI application or an upstream ThoughtDAG release.
 
-![License](https://img.shields.io/badge/license-MIT-green)
-![Status](https://img.shields.io/badge/status-active_development-6B5CE7)
+[中文说明](README_ZH.md) · [Setup](docs/setup.md) · [Security](SECURITY.md) · [Upstream](https://github.com/chenxiachan/thoughtdag)
 
-### [Download ↓](https://chenxiachan.github.io/thoughtdag/#download) · [Website](https://chenxiachan.github.io/thoughtdag/)
+## What this version does
 
-[中文](./README_ZH.md) · [Quick start](#quick-start) · [How it differs](#how-thoughtdag-differs) · [Research](#-research-why-editable-context-matters) · [Models & privacy](#models-cost--privacy)
+- **Run Codex from the canvas.** Foreground answers use persistent Codex threads; background summaries use isolated SDK calls.
+- **Continue and branch tasks.** Continue the main conversation or fork at an earlier answer. Multiple incoming paths start a new thread with the selected graph context.
+- **Import local Codex conversations.** The desktop app lists and imports local tasks. On the same computer and configuration, compatible persistent tasks can also be continued from another Codex client.
+- **Choose a project and permissions.** The desktop folder picker connects a local project. Read only is the default; project access and full access are explicit choices.
+- **Use the models available to your login.** Model, reasoning level and Fast availability come from the runtime; the app does not unlock unavailable account capabilities.
+- **Keep the canvas tools.** Attach PDF, DOCX, images, HTML or web snapshots; edit answers, retain answer versions, arrange branches, and export graph backups or Markdown.
 
-<img src="docs/hero-demo-en.gif" alt="Hero demo, recorded from the live app: selecting a passage in the PDF reader and asking about it; deleting a noise edge and regenerating a clean answer; zooming out through three semantic tiers to the map; opening the backup control center and exporting a real file" width="100%"/>
+### Relationship to ThoughtDAG
 
-<p align="center"><a href="https://www.youtube.com/watch?v=-8BqAyaoNXQ"><img src="https://img.youtube.com/vi/-8BqAyaoNXQ/maxresdefault.jpg" alt="YouTube thumbnail for the ThoughtDAG narrated tour" width="640" /></a></p>
+| Area | This Codex integration |
+| --- | --- |
+| Foundation | Reuses ThoughtDAG's canvas, document reader and graph interactions |
+| Execution | Uses a local Codex runtime; browser provider-key management is removed |
+| Task storage | Canvas data lives in local IndexedDB; persistent Codex tasks also live in the local Codex task store |
+| Distribution | Maintained and versioned separately; does not use upstream's updater or installers |
+| Hosting | Static hosting is a read-only viewer; it cannot run local Codex |
 
-**[▶ The 33-second narrated tour](https://www.youtube.com/watch?v=-8BqAyaoNXQ)**
+For a new task, the graph selects the supplied context. Resuming a persistent Codex task also retains that task's tool and media history, which may not all be visible in canvas cards. Structural branches and changed paths are handled by the adapter; this is not a claim that every runtime state is represented by a graph edge.
 
-</div>
+## Run from source
 
-## The one rule
-
-> **Wires are the context.** What the model sees is exactly what wires into the node. Editing the graph edits the model's memory.
-
-Many tools put conversations on a canvas. In ThoughtDAG, a wire is not decoration or an execution route. It determines what the model sees next.
-
-## In action
-
-One principle behind every gesture: **the human in the loop, the model on the wires**. No autonomous agent redraws your graph.
-
-<table>
-<tr>
-<td width="45%"><img src="docs/illus/prune-en.svg" alt="Illustration: the research chain wired to a summary node, with the edge to a dinner node cut into a red dashed line"/></td>
-<td width="55%">
-
-### ✂️ Delete one edge, get a different answer
-
-The model sees only what wires in. Delete the noise edge, ask again, and the same prompt returns a clean answer. **Reproduce it in chapter ③ of the example canvas.**
-
-</td>
-</tr>
-</table>
-
-<table>
-<tr>
-<td width="55%">
-
-### 📖 Read a paper into a map
-
-Select a passage, ask right there. The answer lands on the canvas with its page number, and the p.N chip jumps back to the page. **Finish the paper, and the map is drawn.**
-
-</td>
-<td width="45%"><img src="docs/illus/reading-en.svg" alt="Illustration: a passage selected on the original page, a purple ask bubble beside it, the paragraph tagged p.3"/></td>
-</tr>
-</table>
-
-<table>
-<tr>
-<td width="45%"><img src="docs/illus/map-en.svg" alt="Illustration: three takeaway plaques with ruled-out, decided and pivoted badges, linked by dashed lines"/></td>
-<td width="55%">
-
-### 💎 Condense, zoom out, and export the shape
-
-Merge nodes into a higher conclusion; weave highlights into cited prose. Zoom through full cards, takeaway plaques and an icon skeleton. Then export the current structure as a light or dark Thought Map.
-
-</td>
-</tr>
-</table>
-
-## How ThoughtDAG differs
-
-Many products use nodes and edges, but the graph does a different job in each category.
-
-| Product category | How it differs from ThoughtDAG |
-|---|---|
-| Linear chat | Context follows one chronological thread; ThoughtDAG selects and merges visible paths. |
-| Mind maps and whiteboards | Edges organize ideas for people; ThoughtDAG edges also change model input. |
-| Branching chat canvases | They usually follow one inherited branch; ThoughtDAG can merge or prune several paths. |
-| Workflow and agent canvases | Edges run tasks and data; ThoughtDAG edges control conversational context. |
-| RAG and automatic memory | The system retrieves context automatically; ThoughtDAG makes the selection visible and editable. |
-
-ThoughtDAG is a user-authored context graph: incoming paths and explicit references form the next request, while excluded work stays visible on the canvas.
-
-## 🗺️ Export the shape of your thinking
-
-The export keeps the nodes, wires and high-level structural counts. Different questions and different ways of exploring them leave visibly different maps.
-
-<img src="docs/thought-map-four-en.png" alt="Four Thought Map exports showing a deep single thread, five explored branches, a three-week investigation and a literature review season" width="100%"/>
-
-## Quick start
-
-### Desktop app
-
-On macOS, install with Homebrew:
+Requirements: Node.js **22.12+**, npm, and a Codex login or your own `CODEX_API_KEY`. Model access and usage limits follow that account. Optional Poppler (`pdftoppm` on PATH) enables server-side PDF page images.
 
 ```bash
-brew install --cask thoughtdag
+git clone https://github.com/ggghhh16/thoughtdag-codex.git
+cd thoughtdag-codex
+npm ci
+npm run codex:login
+npm run server
 ```
 
-Or use the [download page](https://chenxiachan.github.io/thoughtdag/#download), which detects your platform and gives you the right installer; [Releases](https://github.com/chenxiachan/thoughtdag/releases/latest) keeps every build. macOS builds are signed and notarized. Windows builds are not signed yet and may show a SmartScreen warning.
-
-### Run from source
+In a second terminal, in the same directory:
 
 ```bash
-npm install
-npm run server    # LLM proxy :3001
-npm run dev       # → localhost:5173
-# No .env? Connect any OpenAI-compatible endpoint inside the app
+npm run dev
 ```
 
-Environment variables, local models and connection details → [docs/setup.md](docs/setup.md)
+Open <http://localhost:5173>. Use `npm run codex:status` to check authentication. The pinned runtime reuses the local Codex login/configuration; credentials are not included in this repository. Put optional overrides in a local `.env` based on [.env.example](.env.example).
 
-### Browser demo
+### Desktop development
 
-Want a ten-second look before installing anything? The [hosted demo](https://app.thoughtdag.workers.dev) runs in the browser, and the example canvas needs no key. It is a feature subset: keyless web search, some direct-connection tools and the subscription bridge are desktop/local-only.
+```bash
+npm --prefix desktop ci
+npm run desktop
+```
 
-## 🧪 Research: Why editable context matters
+This builds the frontend and starts Electron. Native folder selection and local task import are desktop features. Packaging commands and platform requirements are in [desktop/README.md](desktop/README.md). Source publication does not imply a current, signed installer is available; use only assets released by this repository.
 
-### Context Intervention Benchmark · Pilot v2
+## Permissions and data
 
-`9 models` · `1,485 test runs` · `$0 in free tiers` · `answers scored by exact match`
+| Mode | Behavior |
+| --- | --- |
+| Read only (default) | Local shell/edit tools are disabled; the built-in project reader excludes common credential files and stays inside the selected root |
+| Project access | Local commands can write the selected project and a temporary workspace; command network access is disabled. This is a write boundary, not a guarantee that other host files are unreadable |
+| Full access | Local tools can access host files and the network; the UI asks for confirmation |
 
-Context does not only fade as conversations grow longer. A wrong statement flows into the replies that come after it and undermines the truthfulness of every later conclusion. Our benchmark verified this across nine language models and found the effect to be widespread: deleting the message that introduced the error is often not enough, because the follow-up replies still carry it. Restoring correct answers required cleaning up the affected passage as a whole, or letting the model rewrite it. In one model whose step-by-step thinking we could switch on and off, the minimal cleanup only worked while thinking was on. Managing context, not just accumulating it, decides what a model gets right.
+External MCP integration is **off by default**. It requires `CODEX_ENABLE_MCP=true` and the canvas MCP toggle. External tools have their own capabilities and are not confined by the command filesystem sandbox.
 
-The full report explains the method, the numbers and their statistics, and what this does and does not establish. It does not rank models and does not explain their inner workings; it tests one observable claim: changing what a model sees changes what it answers next.
+- Canvases and attachments are stored locally. Context, selected attachments and permitted tool results can be sent to the configured Codex service when you ask a question.
+- Web snapshots contact their source websites. HTML reader snapshots block scripts and remote subresources; a page may therefore look different from the live website.
+- The HTTP server binds only to loopback and rejects untrusted Host/Origin values. It is a single-user local application, **not an authenticated multi-user server**; local programs running as your user remain trusted.
+- Backups, exports and share links can contain conversation/document content. Review them before sharing.
+- Runtime configuration, credentials, `.env` files, local conversations and build caches are excluded from publication. See [SECURITY.md](SECURITY.md) for the review scope and limitations.
 
-📖 **[Read the first case study](https://chenxiachan.github.io/thoughtdag/stories/context-repair/)** · 📊 **[Methodology and results](https://chenxiachan.github.io/thoughtdag/research/context-repair-pilot-v2/)** · 🗳️ **[Suggest the next model](https://github.com/chenxiachan/thoughtdag/issues/new?template=suggest-next-model.yml)** · 🧪 **[Contribute a run or case](https://github.com/chenxiachan/thoughtdag/issues/new?template=contribute-benchmark.yml)**
+## Development checks
 
-## More capabilities
+```bash
+npm test
+npm run build
+npm audit
+npm --prefix desktop audit
+```
 
-| Capability | What it does |
-|------------|--------------|
-| 📤 Read-only share | One link carries the whole graph: no account, no server storage |
-| 🧭 Staleness & replay | Upstream edits mark the answers they invalidate; replay in dependency order, token estimate first |
-| ✂️ Clipping | Select a passage or drag a rectangle in the reader; it becomes canvas material with page provenance |
-| 🔌 Any model | Per-node pins that follow the line; text-only models read images through their companion text |
-| 🔒 Local-first | Automatic folder backup writes real files; point it at a synced folder for cross-device |
+Tests use local fixtures and do not consume model usage. A real model call requires a separately authenticated session. UI smoke tests are available in `scripts/` and may require a Chrome installation.
 
-Full feature list (60+, grouped by area) → [docs/features.md](docs/features.md)
+## Credits and license
 
-### Works beside your coding agent
-
-Automatic folder backup keeps the canvas as a live `.thoughtdag.json` file in your project; Markdown export turns any context chain or selection into a plain `.md`. Coding agents can read either without a plugin, API or server.
-
-## Models, cost & privacy
-
-Connect a local Ollama or any OpenAI-compatible endpoint. Built-in presets, subscription connections and environment variables are documented in [setup](docs/setup.md).
-
-- **The free model tier covers every feature**; a local Ollama runs fully offline
-- **In the desktop app everything lives on your machine**: canvases, keys, documents; on the web demo, model traffic runs browser-direct and keys never touch the server
-- **PDFs never leave your machine**; only extracted text travels when you ask
-- **The backup format stays backward compatible**; Markdown export is the permanent escape hatch
-
-## Supporters
-
-With gratitude to **@andreilaiter**, ThoughtDAG's first supporter, and to everyone helping this independent open-source project grow.
-
-<a href="https://buymeacoffee.com/chatchan92"><img src="docs/supporters/support-thoughtdag.svg" alt="Support ThoughtDAG" width="252" /></a>
-
----
-
-<div align="center">
-
-*The graph is acyclic. You are the loop.*
-
-[MIT](./LICENSE) © 2026 Xia Chen · [Roadmap](docs/features.md#roadmap) · [Feedback](https://github.com/chenxiachan/thoughtdag/issues) · [Cite](https://github.com/chenxiachan/thoughtdag#cite-this-repository)
-
-</div>
+Based on [ThoughtDAG](https://github.com/chenxiachan/thoughtdag) by Xia Chen. The original copyright and [MIT license](LICENSE) are preserved. The official Codex components retain their own licenses, including Apache-2.0 for the SDK. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

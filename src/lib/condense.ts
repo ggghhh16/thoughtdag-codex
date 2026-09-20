@@ -1,6 +1,6 @@
 import { llmCallStream } from './api';
 import { useStore } from '../store';
-import { autoLayout } from './layout';
+import { layoutNewNodes } from './layout';
 import { activeSummary, countTokens, generateId } from '../utils';
 import type { ThoughtNode, ThoughtEdge, ThoughtData, Highlight } from '../types';
 
@@ -279,9 +279,8 @@ export function buildCondensedCopy(segments: CondenseSegment[], distillates: str
   useStore.setState((state) => {
     const merged = [...state.nodes, ...copies];
     const mergedEdges = [...state.edges, ...newEdges];
-    // one layout pass fixes the copy's post-collapse geometry; autoLayout
-    // is deterministic for the untouched original, so both stay tidy
-    return { nodes: autoLayout(merged, mergedEdges), edges: mergedEdges };
+    // Arrange the new copy without resetting the original canvas.
+    return { nodes: layoutNewNodes(merged, mergedEdges, state.nodes), edges: mergedEdges };
   });
   return { copiedNodes: copies.length, collapsedRuns: segments.length, distillIds };
 }

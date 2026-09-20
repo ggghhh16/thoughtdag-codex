@@ -20,9 +20,12 @@
 
 ## 开发环境
 
+请安装 Node.js 22.12 或更高版本。真实生成前先完成 Codex 登录：
+
 ```bash
 npm install
-npm run server   # LLM 代理运行在 :3001
+npm run codex:login
+npm run server   # Codex 代理运行在 :3001
 npm run dev      # Vite 应用运行在 :5173
 ```
 
@@ -30,9 +33,12 @@ npm run dev      # Vite 应用运行在 :5173
 
 ```bash
 npm run lint
+npm run test:codex
 npm run build
 npm run smoke
 ```
+
+适配器测试使用假事件流，不消耗 Codex 额度。开发桌面版时，还要先运行 `npm --prefix desktop ci`，再执行相应的 payload/打包命令。
 
 如果某项检查无法运行，或者失败来自与本次改动无关的既有问题，请在 Pull Request 中明确说明。
 

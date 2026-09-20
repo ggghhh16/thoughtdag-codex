@@ -21,7 +21,12 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
   const nodes = useStore((s) => s.nodes);
   const edges = useStore((s) => s.edges);
   const [refreshTick, setRefreshTick] = useState(0);
-  const segments = useMemo(() => (open && run.status === 'idle' ? findCandidateSegments(nodes, edges) : []), [open, run.status, nodes, edges, refreshTick]);
+  const segments = useMemo(() => {
+    // Reading the nonce intentionally invalidates this scan when the user
+    // clicks Rescan even if the store retained the same node/edge references.
+    void refreshTick;
+    return open && run.status === 'idle' ? findCandidateSegments(nodes, edges) : [];
+  }, [open, run.status, nodes, edges, refreshTick]);
   const globalModel = useUiStore((s) => s.selectedModel);
   const models = useModels()?.models ?? [];
   const [model, setModel] = useState('');

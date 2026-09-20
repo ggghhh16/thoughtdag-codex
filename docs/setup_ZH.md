@@ -1,94 +1,96 @@
-# 配置与架构
+# Codex 配置与架构
 
 [English](./setup.md) · [返回 README](../README_ZH.md)
 
-## 快速开始（细节版）
+## 环境要求
 
-最快的路径是[桌面版](https://chenxiachan.github.io/thoughtdag/?lang=zh#download)：下载打开后一键授权 OpenRouter（在默认浏览器里授权一次即生成 key，含免费档模型），或粘贴任意服务商的 key；不配置也行，可以先逛示例画布。想装之前先看一眼，可以用[在线 Demo](https://app.thoughtdag.workers.dev)，它是浏览器里的功能子集，模型流量浏览器直连网关，key 不会经过 Demo 的服务器。想从源码跑：
+- Node.js 22.12 或更高版本
+- npm
+- 可用的 Codex 登录态，或 `CODEX_API_KEY`
+
+Codex App Server 与 Codex SDK 在本地 Node 进程中运行，不能在纯静态站点、Cloudflare Workers 等无法启动子进程的边缘运行时中生成回答。
+
+## 从源码运行
 
 ```bash
 npm install
-npm run server         # LLM 代理
-npm run dev            # → http://localhost:5173
+npm run codex:login
+npm run codex:status
+npm run server
 ```
 
-不用配置也能开始：`.env` 里没有 key 时，应用会请你连接一个模型接口。选一家服务商填 key、接入本地运行的模型（Ollama 等），或者填任何兼容 OpenAI 协议的自定义端点；模型列表从接口现场拉取，key 只存 localStorage 和代理内存，不落盘。也可以把 `.env.example` 复制成 `.env` 填任意服务商的 key，`ZHIPU_API_KEY` 免费（open.bigmodel.cn）。
+另开一个终端：
 
-示例画布在首页一键载入：围绕一个日常问题（收藏夹为什么总在吃灰）展开四章，从对话语法到一份内嵌真 PDF 的阅读闭环。缩小画布，就是 README 里的地图形态。最快的入口：把一篇 PDF 拖到首页，从阅读开始。本地运行时联网搜索免 key 即可用（AnySearch 匿名档，按你自己的 IP 计每日额度）；配智谱 key 可升级引擎，档位在模型菜单里切换。学术检索（arXiv + Semantic Scholar）免费、不需要任何 key。
+```bash
+npm run dev
+```
 
-## 支持的模型
+打开 <http://localhost:5173>。右上角 Codex 状态入口会显示 `已连接`、`未登录` 或 `不可用`；浏览器永远看不到 token、API Key 或认证文件内容。
 
-基于 Vercel AI SDK。下表任何一家，把 key 填进 `.env` 即自动激活；也可以完全跳过 `.env`，在应用里连接任何兼容 OpenAI 协议的接口（含本地 Ollama）。工具栏随时换模型。纯文本模型遇到图片不轻易换人：已识读的图以伴随文本参与；只有未识读的图才交给视觉模型代答（有提示，绝不静默）。各家默认模型 id 可用环境变量覆盖（如 `OPENAI_MODELS=gpt-5.2`）。
+若不想使用交互式登录，可把 `.env.example` 复制为 `.env` 并设置 `CODEX_API_KEY`。其余可选项：
 
-> 图片理解需要一把视觉模型的 key。粘贴的图片会被你配置的最强视觉模型自动识读一次，结果是可编辑的伴随文本。免费的 `glm-4v-flash` 可用；旗舰视觉模型读科研图明显更好。
-
-| 提供商 | 默认模型 | `.env` key | 说明 |
-|--------|----------|------------|------|
-| **智谱 GLM** | glm-4.5-flash · glm-4v-flash | `ZHIPU_API_KEY` | **免费**、国内直连；联网搜索由它驱动 |
-| **通义千问** (DashScope) | qwen-plus · qwen-vl-plus | `DASHSCOPE_API_KEY` | 国内直连 |
-| **OpenAI** | gpt-5.1 · gpt-5-mini | `OPENAI_API_KEY` | 可用 `OPENAI_MODELS` 覆盖 |
-| **Anthropic** | claude-sonnet-5 · claude-haiku-4-5 | `ANTHROPIC_API_KEY` | 可用 `ANTHROPIC_MODELS` 覆盖 |
-| **Google** | gemini-2.5-pro · gemini-2.5-flash | `GOOGLE_API_KEY` | 可用 `GOOGLE_MODELS` 覆盖 |
-| **DeepSeek** | deepseek-v4-flash · deepseek-v4-pro | `DEEPSEEK_API_KEY` | 纯文本（经伴随文本读图）|
-| **Kimi**（月之暗面）| kimi-k2-turbo-preview · kimi-latest | `MOONSHOT_API_KEY` | 国内直连；国际版设 `MOONSHOT_BASE_URL` |
-| **OpenRouter** | openrouter/auto | `OPENROUTER_API_KEY` | 一把 key 通 300+ 模型，`OPENROUTER_MODELS` 填任意 `vendor/model` |
-| **Ollama** | （你本地的）| `OLLAMA_MODELS=qwen3:8b,…` | 完全本地离线 |
-
-> **联网搜索的可用条件**：OpenRouter 接口自带（网关 `:online`）。本地运行始终可用：AnySearch 匿名档免 key 搜索（按 IP 计每日额度，`ANYSEARCH_API_KEY` 可提升），连接智谱 GLM 接口（免费 key 即可）则由它驱动引擎。线上版的非 `:online` 模型，通过已连接的 GLM 接口搜索，或在模型菜单填入 AnySearch key（免费注册）。学术检索（arXiv + Semantic Scholar）无需任何条件。
-
-## 订阅接入
-
-按量 API key 不是唯一入口。四家订阅也能接，应用内预设已带好对应端点：
-
-**ChatGPT 订阅（Plus/Pro）**：经社区本地桥接入，桌面版和本地运行都可用（桥本身需要电脑装有 Node.js）：
-
-1. 终端运行 `npx openai-oauth@latest`，用 ChatGPT 账号登录一次，桥监听 `127.0.0.1:10531`。
-2. 用桌面版，或本地运行 ThoughtDAG（`npm run server` + `npm run dev`）。
-3. 应用内：模型选择器 → 添加接口 → **ChatGPT 订阅 · 本地** → 获取模型列表 → 保存。用量计入订阅额度，不产生按量账单。在线 Demo 连不到你的本机，此通道限桌面版/本地。
-
-知情提示：这座桥是社区工具，使用的是你自己的账号；服务方对第三方使用的政策可能变化，公开渠道已有因第三方接入订阅被封号的报告。若不想承担该风险，下方的订阅计划与 OpenRouter 一键授权是受官方支持的通道。
-
-**GLM Coding 订阅**：订阅本身发 API key，走专用端点（`/api/coding/paas/v4`，与按量的 `/api/paas/v4` 不通用）。选 **GLM Coding 订阅** 预设，填订阅控制台里的 key 即可。线上版同样可用。
-
-**Kimi Code 订阅**：同样形态。在 Kimi Code 控制台创建 key（最多 5 把），选 **Kimi Code 订阅** 预设填入即可。推荐 `k3-256k`，省配额。线上版同样可用。
-
-**MiniMax Coding Plan**：选 **MiniMax** 预设，填订阅 key（订阅与按量共用端点）。MiniMax 不提供模型列表路由，预设自带目录——选择器直接列出 `MiniMax-M2.7` 等，无需探测。线上版同样可用。
-
-> 刻意没有 Claude 与 Gemini 订阅：两家都禁止订阅凭证在第三方工具使用（2026 年已实际执法，有封号案例）。它们的按量 API key 走常规预设，不受影响。
-
-## 成本与隐私（细节版）
-
-- **免费可用。** 智谱免费档（GLM-4.5-Flash 文本 + GLM-4V-Flash 视觉）覆盖全部功能；联网搜索约 ¥0.01/次。也可以接任何你已付费的模型，或本地 Ollama 完全离线。
-- **数据在你手里。** 画布存在你的浏览器里；唯一的服务端是你自己机器上的轻代理。除了你选择的 LLM API，数据不会发往任何别的地方。在线 Demo 上，模型流量从浏览器直连网关，key 和对话完全不经过 Demo 的服务器。
-- **PDF 不离开你的电脑。** 拖入的文档永远不会以文件形式上传，只有提取出的文本在你提问时发给你选择的模型。未发表的手稿可以放心读。
-- **换浏览器不等于丢工作。** 自动文件夹备份把画布写成你指定文件夹里的真实 `.thoughtdag.json` 文件（需要 Chromium 系浏览器，如 Chrome、Edge、Arc；Safari 和 Firefox 用一键手动导出）。备份格式保持向后兼容，Markdown 导出是永远与格式无关的逃生门。
-- 可选：PDF 页图渲染需要 poppler（`brew install poppler`），缺失时自动降级纯文本。
-
-## 技术栈与架构
-
-| 层级 | 技术 |
+| 变量 | 作用 |
 |------|------|
-| 界面 | React 19 + TypeScript + Vite 7 |
-| 画布 | @xyflow/react (React Flow) |
-| 状态 | Zustand（persist → IndexedDB via idb-keyval）|
-| 样式 | Tailwind CSS v4 |
-| 大模型 | Vercel AI SDK：9 家 provider，按 .env key 自动注册 |
-| 代理 | Express + Vercel AI SDK（server.mjs，默认端口 3001）|
+| `PORT` | 本地代理端口，默认 `3001` |
+| `VITE_PUBLIC_VIEWER_ORIGIN` | 可选的只读分享站点；未设时使用当前 origin |
+| `CODEX_HOME` | 指定另一份 Codex 配置目录 |
+| `CODEX_ENABLE_MCP` | 设为 `true` 才继承用户 Codex MCP；默认关闭 |
+| `CODEX_MAX_CONCURRENCY` | 同时生成数，范围 1–8，默认 3 |
 
-<details>
-<summary>请求流</summary>
+修改环境变量后需要重启 `npm run server`。
 
+## 画布问答框如何映射到 Codex 任务
+
+前台问答通过官方 Codex App Server 使用持久线程。一个问答框的当前问题/答案版本对应一个 turn，每个答案版本分别保存自己的 Codex thread ID 与 turn ID。映射按 DAG 结构进行，而不是把最新任务当成一条只能向前的线性聊天：
+
+- 父框的首个普通子框 resume 父线程。
+- 同一父框的其他子框，或显式分支，会从父 turn 精确 fork。
+- 多路合流以及没有 Codex ID 的旧画布，会用当前连线选出的上下文 start 新线程。
+- resume 前会检查锚点；若官方 Codex 客户端已在锚点之后追加 turn，ThoughtDAG 会从锚点自动 fork，不把两边历史接在一起。
+
+后台摘要、记忆判断、凝练等机器任务不属于这条可见问答路径，仍使用一次性的隔离 SDK 线程。
+
+```text
+React 画布
+  -> buildContext() 按连线遍历 DAG
+  -> POST /api/stream（SSE）处理前台问答
+  -> App Server start / resume / fork + 一个持久 turn
+  -> POST /api/codex 处理隔离的非流式后台任务
 ```
-浏览器 (localhost:5173)
-  └─ React + React Flow 画布
-      └─ Zustand store (nodes, edges, history) ⇄ IndexedDB（自动保存）
-          ├─ buildContext(nodeId) → 遍历 DAG → ContextMessage[] + images
-          └─ src/lib/api.ts
-              ├─ llmCallStream(messages) → POST /api/stream（SSE 流式 + 工具事件）
-              ├─ llmCall(messages)       → POST /api/claude（非流式，用于摘要）
-              └─ extractPdf(base64)      → POST /api/pdf-extract
-                        └─ Express + AI SDK (server.mjs) → 智谱 / 通义千问 / 任意 provider
-                             └─ web_search 工具（模型自主调用，引用回流）
+
+在同一台机器并使用相同的 `CODEX_HOME` 与登录态时，这些持久前台任务可在官方 Codex 客户端里查看和继续。ThoughtDAG 沿用本机 Codex 的任务存储，不额外承诺跨设备同步，也不会让不同配置目录自动互通。
+
+Codex 默认使用只读沙箱和 `approvalPolicy: "never"`。未选择项目时，工作目录是每次请求独立的临时空目录；桌面版可通过顶部项目菜单原生选择、切换或清除项目文件夹，再从工具栏选择权限：只读访问仅注入受限文件 MCP（列出、读取、搜索）；项目操作启用命令并只把所选项目加入持久可写根，本地命令不能联网；完全访问使用无沙箱文件/网络能力，并在切换时二次确认。只读和项目模式禁止加载项目指令；完全访问可以加载本地指令、技能和 hooks。命令环境采用运行时 core 环境策略。后台调用使用独立线程，但不能据此认为其权限一定比所选模式更小。图片始终写入独立临时目录，并在完成、失败或取消后清理。
+
+全局 MCP 默认不继承，因为外部工具不受文件沙箱约束，可能产生写入或其他副作用。只有你明确设置 `CODEX_ENABLE_MCP=true`，并在画布上打开 MCP 开关时，才会启用 Codex 配置中的 MCP；这时需要自行信任并审计那些工具。仓库里的 `codex.config.example.toml` 给出了 mock server 的可选配置示例。
+
+## 模型与联网搜索
+
+界面通过 Codex App Server 的动态模型目录读取当前登录态可用的模型、默认模型、思考档位和速度能力。切换模型时，不兼容的旧思考档会回到“自动（模型默认）”；“快速”映射到 Codex 的 priority 服务层，“标准”显式映射到 default，不支持 Fast 的模型会安全回到标准档。服务端在生成前再次校验所有选择。旧画布里保存的其他供应商模型标记会安全回落到当前 Codex 默认值，但历史节点内容与来源字段不会被改写。
+
+画布上的联网搜索开关会转成 Codex 的网页搜索模式。是否可用仍取决于本机 Codex 配置、账号与策略；应用不会退回到旧供应商或浏览器直连接口。
+
+## 数据、认证与桌面版
+
+- 画布及每个答案版本的 Codex thread / turn ID 保存在浏览器 IndexedDB，也可继续导入/导出 `.thoughtdag.json`。
+- 打包后的桌面渲染端固定使用回环 origin `http://127.0.0.1:31173`。升级时会一次性合并旧 `31174` origin 留下的画布与附件记录，临时端口变化不再让项目看起来“消失”。
+- `#view=` 分享内容仍只在 URL 片段中；源码本机运行未配置公共 viewer 时，链接只适合同一台机器。发布自己的只读站点后可设置 `VITE_PUBLIC_VIEWER_ORIGIN`。
+- 文档文件本身不交给远程托管服务；只有当前连线选中的文本与请求图片会进入本机 Codex 调用链路。
+- 源码版和桌面版复用原生 Windows/macOS/Linux 的 Codex 登录缓存。Windows 原生环境与 WSL 的用户目录不同，需要在运行应用的同一侧完成登录。
+- 桌面版只把原生文件夹选择器返回的路径交给本机后端注册；渲染进程与生成接口仅持有运行期不透明项目 ID，服务重启后自动失效。
+- 本地服务只监听回环地址，不应直接暴露到公网。
+
+## 验收
+
+```bash
+npm run test:codex   # 假事件流，不消耗额度
+npm run build
+# 保持 `npm run server` 与 `npm run dev` 都在运行：
+npm run smoke
 ```
 
-</details>
+真实回答测试需要 `npm run codex:status` 成功。若未登录，状态接口与生成错误会给出明确提示，不会静默切换模型。
+
+## 本地 HTTP 与代理配置
+
+服务拒绝非回环地址的 `HOST`。浏览器来源仅允许服务自身和本机 5173/4173 端口；使用其他开发端口时，按 `.env.example` 设置精确的 `THOUGHTDAG_ALLOWED_ORIGINS`，这不会开放远程托管。只有受信任的本机代理使用 fake-IP DNS 时，才显式设置 `THOUGHTDAG_ALLOW_FAKE_IP=true`；普通 DNS 保持关闭。

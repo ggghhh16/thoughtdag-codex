@@ -1,7 +1,7 @@
 import type { StateCreator } from 'zustand';
 import type { ThoughtNode, ThoughtEdge } from '../../types';
 import { generateId } from '../../utils';
-import { autoLayout } from '../../lib/layout';
+import { layoutNewNodes } from '../../lib/layout';
 import { getDescendantIds, selectionSinks, walkUpAncestors } from '../../lib/graph';
 import { COLORS } from '../../lib/constants';
 import type { ContextMessage, ImageAttachment } from '../../lib/api';
@@ -20,9 +20,8 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     get().logEvent('ask', id, { chars: question.length, ...(parentId ? {} : { root: true }), ...(branchContext ? { branch: true } : {}) });
     const isRoot = !parentId;
     // Model follows the LINE, not the toolbar: a child inherits its parent's
-    // pinned model, so a deepseek thread stays deepseek even while the
-    // global picker sits on something else. No pin on the parent = keep
-    // following the global pick (undefined), as before.
+    // pinned model even while the global picker sits on something else. No pin
+    // on the parent = keep following the global pick (undefined), as before.
     const inheritedModel = parentId ? get().nodes.find((n) => n.id === parentId)?.data.model : undefined;
     const newNode: ThoughtNode = {
       id,
@@ -114,7 +113,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     const updatedNodes = parentId
       ? get().nodes.map((n) => n.id === parentId ? { ...n, data: { ...n.data, isCollapsed: true } } : n)
       : get().nodes;
-    const newNodes = autoLayout([...updatedNodes, newNode], newEdges);
+    const newNodes = layoutNewNodes([...updatedNodes, newNode], newEdges, updatedNodes);
     set({ nodes: newNodes, edges: newEdges, selectedNodeId: id });
 
     // Build full context from ancestors + explicit role for the new node
@@ -135,7 +134,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
       if (att.type.startsWith('image/')) {
         contextImages.push({ data: att.content, mimeType: att.type });
       } else if (att.type === 'application/pdf') {
-        // text channel only — page images trip provider image-count limits
+        // text channel only — page images remain in the reader
         if (att.extractedText) {
           contextMessages.push({ role: 'user', content: `[PDF: ${att.name}]\n${att.extractedText}` });
         }
@@ -246,10 +245,10 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
 
     const allEdges = [...get().edges, ...newEdges];
     const merged = [...get().nodes.map((n) => (n.id === parentId && !follow ? { ...n, data: { ...n.data, isCollapsed: true } } : n)), ...newNodes];
-    const allNodes = follow ? merged : autoLayout(merged, allEdges);
+    const allNodes = follow ? merged : layoutNewNodes(merged, allEdges, get().nodes);
     set({ nodes: allNodes, edges: allEdges, selectedNodeId: null, selectedNodeIds: [] });
 
-    // Bounded concurrency: free-tier providers dislike large bursts
+    // Bounded concurrency keeps simultaneous Codex turns manageable.
     const LIMIT = 6;
     let cursor = 0;
     // Shared ancestor context for one-shot branches (identical per sibling)
@@ -317,7 +316,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
       data: {},
     }));
     const allEdges = [...edges, ...newEdges];
-    set({ nodes: autoLayout([...nodes, newNode], allEdges), edges: allEdges, selectedNodeId: id, selectedNodeIds: [] });
+    set({ nodes: layoutNewNodes([...nodes, newNode], allEdges, nodes), edges: allEdges, selectedNodeId: id, selectedNodeIds: [] });
 
     // Standard context walk through the fresh fan-in edges (self blanked)
     const ctx = buildContext(
@@ -437,7 +436,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
       ? [...get().edges, { id: `edge-${parentId}-${id}`, source: parentId, target: id, type: 'smoothstep' }]
       : get().edges;
 
-    const newNodes = autoLayout([...get().nodes, newNode], newEdges);
+    const newNodes = layoutNewNodes([...get().nodes, newNode], newEdges, get().nodes);
     set({ nodes: newNodes, edges: newEdges, selectedNodeId: id });
 
     const regenSelf = get().nodes.find((n) => n.id === id);
@@ -513,7 +512,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
 
     get().pushHistory();
     const newEdges = [...edges, ...fanIn];
-    const newNodes = autoLayout([...nodes, newNode], newEdges);
+    const newNodes = layoutNewNodes([...nodes, newNode], newEdges, nodes);
     set({ nodes: newNodes, edges: newEdges, selectedNodeId: id, selectedNodeIds: [] });
 
     // Context arrives via the fan-in edges; the prompt is instruction only
@@ -584,7 +583,7 @@ ${intent.trim()}` : ''}` },
             ],
           }));
         }
-        set((state) => ({ nodes: autoLayout(state.nodes, state.edges) }));
+        // Completion changes content/topology, never existing coordinates.
       },
     });
   },
@@ -645,7 +644,7 @@ ${intent.trim()}` : ''}` },
 
     get().pushHistory();
     const newEdges = [...edges, ...fanIn];
-    set({ nodes: autoLayout([...nodes, newNode], newEdges), edges: newEdges, selectedNodeId: id, selectedNodeIds: [] });
+    set({ nodes: layoutNewNodes([...nodes, newNode], newEdges, nodes), edges: newEdges, selectedNodeId: id, selectedNodeIds: [] });
 
     // First generation feeds ONLY the marks (the whole point: human-curated
     // input). The fan-in edges carry provenance and the full upstream for

@@ -1,10 +1,7 @@
 # Desktop packages for the three platforms. Triggered by version tags (and
-# by hand). The release lifecycle is draft-first: a draft is created before
-# the builds, every platform uploads into it, and a final job publishes it
-# only when ALL of them succeeded. Installed apps checking for updates
-# during the build window therefore keep seeing the previous complete
-# release instead of a half-uploaded new one (the "could not check for
-# updates" 404s of the per-job-publish era).
+# by hand). macOS architectures are separate jobs because each package must
+# contain the matching optional Codex CLI. Releases are manual downloads;
+# the desktop application's automatic update channel is intentionally off.
 name: desktop
 on:
   push:
@@ -35,11 +32,17 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            script: dist:mac
+            script: dist:mac:x64
+            artifact: macos-x64
+          - os: macos-latest
+            script: dist:mac:arm64
+            artifact: macos-arm64
           - os: windows-latest
             script: dist:win
+            artifact: windows-x64
           - os: ubuntu-latest
             script: dist:linux
+            artifact: linux-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -47,10 +50,12 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: npm run test:codex
       - run: npm run build
       - run: npm ci
         working-directory: desktop
-      - run: npm run ${{ matrix.script }}
+      - name: Build ${{ matrix.artifact }} package
+        run: npm run ${{ matrix.script }}
         working-directory: desktop
         env:
           # macOS signing + notarization: absent secrets = unsigned build
@@ -62,7 +67,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       - uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ matrix.os }}
+          name: desktop-${{ matrix.artifact }}
           path: |
             desktop/out/*.dmg
             desktop/out/*.zip
@@ -75,7 +80,7 @@ jobs:
         run: |
           shopt -s nullglob
           files=(desktop/out/*.dmg desktop/out/*.zip desktop/out/*.exe \
-                 desktop/out/*.AppImage desktop/out/latest*.yml desktop/out/*.blockmap)
+                 desktop/out/*.AppImage)
           gh release upload "$TAG" "${files[@]}" -R "$REPO" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

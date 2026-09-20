@@ -3,75 +3,51 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ThoughtDAG — Make LLM context visible and editable</title>
+    <title>ThoughtDAG Codex — Make Codex context visible and editable</title>
     <meta
       name="description"
-      content="ThoughtDAG is an open-source, local-first canvas where graph edges define the context sent to an LLM. Branch, prune, merge, and inspect what the model sees."
+      content="ThoughtDAG Codex is a local-first canvas where graph edges define the context sent to a fresh Codex thread. Branch, prune, merge, and inspect what Codex sees."
     />
-    <meta name="robots" content="index,follow,max-image-preview:large" />
-    <meta name="theme-color" content="#f8f6fb" />
+    <!-- Replace canonical/social URLs before publishing this fork. -->
+    <meta name="robots" content="noindex,nofollow" />
+    <meta name="theme-color" content="#111018" />
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
-    <link rel="canonical" href="https://chenxiachan.github.io/thoughtdag/" />
-    <link
-      rel="alternate"
-      hreflang="en"
-      href="https://chenxiachan.github.io/thoughtdag/"
-    />
-    <link
-      rel="alternate"
-      hreflang="zh-CN"
-      href="https://chenxiachan.github.io/thoughtdag/?lang=zh"
-    />
-    <link
-      rel="alternate"
-      hreflang="x-default"
-      href="https://chenxiachan.github.io/thoughtdag/"
-    />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="ThoughtDAG — Make LLM context visible and editable" />
+    <meta property="og:title" content="ThoughtDAG Codex — Make Codex context visible and editable" />
     <meta
       property="og:description"
-      content="A local-first, open-source canvas where the graph determines what the model sees."
-    />
-    <meta property="og:url" content="https://chenxiachan.github.io/thoughtdag/" />
-    <meta
-      property="og:image"
-      content="https://chenxiachan.github.io/thoughtdag/assets/thoughtdag-story-poster-en-horizontal.jpg"
+      content="A local-first canvas where the graph determines what a fresh Codex thread sees."
     />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta
-      name="twitter:image"
-      content="https://chenxiachan.github.io/thoughtdag/assets/thoughtdag-story-poster-en-horizontal.jpg"
-    />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
-        "name": "ThoughtDAG",
+        "name": "ThoughtDAG Codex",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "Web",
-        "description": "An open-source, local-first canvas where graph edges define the context sent to an LLM.",
+        "description": "A local-first canvas where graph edges define the context sent to a fresh Codex thread.",
         "license": "https://opensource.org/licenses/MIT",
-        "codeRepository": "https://github.com/chenxiachan/thoughtdag",
-        "url": "https://chenxiachan.github.io/thoughtdag/"
+        "isBasedOn": "https://github.com/chenxiachan/thoughtdag"
       }
     </script>
     <style>
       :root {
-        --paper: #f8f6fb;
-        --card: #ffffff;
-        --ink: #211f29;
-        --muted: #6d6878;
-        --line: #ded9e8;
-        --purple: #6b5ce7;
-        --purple-soft: #eeeafd;
+        color-scheme: dark;
+        --paper: #111018;
+        --card: #1b1925;
+        --ink: #f3efff;
+        --muted: #aaa3bb;
+        --line: #393447;
+        --purple: #a89cff;
+        --purple-soft: #2d2846;
         --orange: #e8890c;
-        --orange-soft: #fff1dd;
+        --orange-soft: #3b2b19;
         --green: #25a06b;
-        --green-soft: #e4f5ed;
-        --shadow: 0 18px 50px rgba(55, 45, 100, 0.12);
+        --green-soft: #19372c;
+        --shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
         --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
       }
 
@@ -1205,7 +1181,7 @@
     <nav class="nav" aria-label="Primary navigation">
       <a class="brand" href="#top">
         <img src="assets/favicon.svg" alt="" />
-        <span>ThoughtDAG</span>
+        <span>ThoughtDAG Codex</span>
       </a>
       <div class="nav-actions">
         <a class="nav-link" href="#top" data-en="How it works" data-zh="工作原理"
@@ -1219,7 +1195,8 @@
           href="https://github.com/chenxiachan/thoughtdag"
           target="_blank"
           rel="noreferrer"
-          >GitHub</a
+          data-en="Upstream" data-zh="上游项目"
+          >Upstream</a
         >
         <button
           class="nav-link language-toggle"
@@ -1232,9 +1209,9 @@
         <a
           class="nav-link primary"
           href="#download"
-          data-en="Download ↓"
-          data-zh="下载桌面版 ↓"
-          >Download ↓</a
+          data-en="Run locally ↓"
+          data-zh="本机运行 ↓"
+          >Run locally ↓</a
         >
       </div>
     </nav>
@@ -1244,7 +1221,7 @@
     <section class="story" id="story" aria-label="ThoughtDAG interactive story">
       <div class="stage" id="stage">
         <div class="story-intro" id="story-intro">
-            <p class="story-intro-name">ThoughtDAG</p>
+            <p class="story-intro-name">ThoughtDAG Codex</p>
             <h1
               data-en-html="Your thinking deserves a map<br /><span>A wire is the context</span>"
               data-zh-html="思考值得一张地图<br /><span>连线即上下文</span>"
@@ -2054,40 +2031,13 @@
       </div>
     </section>
 
-    <section class="dl-section" id="download" aria-label="Download">
-      <h2 data-en="Take it to the desktop" data-zh="把它装进桌面">Take it to the desktop</h2>
-      <p class="dl-sub" data-en="The same app in its own window, local engine bundled. No Node, no terminal." data-zh="同一个应用装进独立窗口，内置本地引擎。不需要 Node，不需要终端。">The same app in its own window, local engine bundled. No Node, no terminal.</p>
-      <span class="dl-version" id="dl-version">v0.3.32</span>
-      <div class="dl-grid" id="dl-grid">
-        <div class="dl-card" data-os="mac" data-badge="Recommended for you">
-          <div class="dl-os">macOS <small>Apple Silicon</small></div>
-          <div class="dl-command" aria-label="Homebrew install command">
-            <span data-en="Install with Homebrew" data-zh="通过 Homebrew 安装">Install with Homebrew</span>
-            <code>brew install --cask thoughtdag</code>
-          </div>
-          <a class="dl-btn" id="dl-mac-arm" href="https://github.com/chenxiachan/thoughtdag/releases/download/v0.3.32/ThoughtDAG-0.3.32-arm64.dmg" data-en="Download .dmg" data-zh="下载 .dmg">Download .dmg</a>
-          <div class="dl-size" id="dl-size-mac">≈143MB</div>
-          <a class="dl-btn secondary" id="dl-mac-x64" href="https://github.com/chenxiachan/thoughtdag/releases/download/v0.3.32/ThoughtDAG-0.3.32.dmg" data-en="Intel Macs" data-zh="Intel 芯片版">Intel Macs</a>
-        </div>
-        <div class="dl-card" data-os="win" data-badge="Recommended for you">
-          <div class="dl-os">Windows <small>x64</small></div>
-          <a class="dl-btn" id="dl-win" href="https://github.com/chenxiachan/thoughtdag/releases/download/v0.3.32/ThoughtDAG.Setup.0.3.32.exe" data-en="Download installer" data-zh="下载安装程序">Download installer</a>
-          <div class="dl-size" id="dl-size-win">≈121MB</div>
-        </div>
-        <div class="dl-card" data-os="linux" data-badge="Recommended for you">
-          <div class="dl-os">Linux <small>x64</small></div>
-          <a class="dl-btn" id="dl-linux" href="https://github.com/chenxiachan/thoughtdag/releases/download/v0.3.32/ThoughtDAG-0.3.32.AppImage" data-en="Download .AppImage" data-zh="下载 .AppImage">Download .AppImage</a>
-          <div class="dl-size" id="dl-size-linux">≈150MB</div>
-        </div>
+    <section class="dl-section" id="download" aria-label="Run locally">
+      <h2 data-en="Run ThoughtDAG Codex locally" data-zh="在本机运行 ThoughtDAG Codex">Run ThoughtDAG Codex locally</h2>
+      <p class="dl-sub" data-en="This fork has no published installer yet. Build from source and sign in with the bundled Codex CLI." data-zh="这个复刻版尚未发布安装包。请从源码构建，并使用随项目安装的 Codex CLI 登录。">This fork has no published installer yet. Build from source and sign in with the bundled Codex CLI.</p>
+      <div class="dl-command" aria-label="Local run commands">
+        <code>npm install &amp;&amp; npm run codex:login &amp;&amp; npm run server</code>
       </div>
-      <div class="dl-notes">
-        <b data-en="Install notes" data-zh="安装说明">Install notes</b><br />
-        <span data-en='macOS builds are signed and notarized by Apple: double-click and go. Windows builds are not signed yet; on the SmartScreen prompt choose "More info", then "Run anyway".' data-zh="macOS 版已由 Apple 签名与公证，双击即可打开。Windows 版暂未签名，弹出提示时点「更多信息」，再点「仍要运行」。">macOS builds are signed and notarized by Apple: double-click and go. Windows builds are not signed yet; on the SmartScreen prompt choose "More info", then "Run anyway".</span>
-      </div>
-      <p class="dl-foot">
-        <span data-en="All versions and history live on " data-zh="全部版本与历史在 ">All versions and history live on </span><a href="https://github.com/chenxiachan/thoughtdag/releases">GitHub Releases</a><span data-en="." data-zh="。">.</span>
-      </p>
-    
+      <p class="dl-foot" data-en="Start npm run dev in a second terminal, then open localhost:5173." data-zh="另开终端运行 npm run dev，然后打开 localhost:5173。">Start npm run dev in a second terminal, then open localhost:5173.</p>
     </section>
 
     <footer class="finale">
@@ -2100,19 +2050,19 @@
           Make model context <span>visibly editable.</span>
         </h2>
         <p
-          data-en="Open source · MIT · local-first · Ollama and OpenAI-compatible endpoints"
-          data-zh="开源 · MIT 许可 · 本地优先 · 支持 Ollama 及 OpenAI-compatible 接口"
+          data-en="Open source · MIT · local-first · official Codex SDK"
+          data-zh="开源 · MIT 许可 · 本地优先 · 官方 Codex SDK"
         >
-          Open source · MIT · local-first · Ollama and OpenAI-compatible endpoints
+          Open source · MIT · local-first · official Codex SDK
         </p>
         <a
           class="button"
           href="https://github.com/chenxiachan/thoughtdag"
           target="_blank"
           rel="noreferrer"
-          data-en="View ThoughtDAG on GitHub ↗"
-          data-zh="在 GitHub 上查看 ThoughtDAG ↗"
-          >View ThoughtDAG on GitHub ↗</a
+          data-en="View upstream ThoughtDAG ↗"
+          data-zh="查看上游 ThoughtDAG ↗"
+          >View upstream ThoughtDAG ↗</a
         >
       </div>
     </footer>
@@ -2461,45 +2411,6 @@
         measure();
         layoutEdges();
         requestRender();
-      })();
-    </script>
-    <script>
-      // Download section: highlight the visitor's platform, keep links fresh.
-      (function () {
-        var ua = navigator.userAgent;
-        var os = /Mac/i.test(ua) ? "mac" : /Win/i.test(ua) ? "win" : /Linux|X11/i.test(ua) ? "linux" : null;
-        if (os) {
-          var card = document.querySelector('.dl-card[data-os="' + os + '"]');
-          if (card) { card.classList.add("recommended"); card.parentNode.prepend(card); }
-        }
-        // the badge is CSS-content: keep it bilingual by watching the html lang
-        var setBadges = function () {
-          var zh = document.documentElement.lang.indexOf("zh") === 0;
-          document.querySelectorAll(".dl-card").forEach(function (c) {
-            c.setAttribute("data-badge", zh ? "为你推荐" : "Recommended for you");
-          });
-        };
-        setBadges();
-        new MutationObserver(setBadges).observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] });
-
-        fetch("https://api.github.com/repos/chenxiachan/thoughtdag/releases?per_page=1")
-          .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
-          .then(function (rel) {
-            var release = rel && rel[0];
-            if (!release || !release.assets) return;
-            document.getElementById("dl-version").textContent = release.tag_name;
-            var mb = function (a) { return "≈" + Math.round(a.size / 1048576) + "MB"; };
-            var set = function (id, a) { var el = document.getElementById(id); if (el) el.href = a.browser_download_url; };
-            var size = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
-            release.assets.forEach(function (a) {
-              var n = a.name;
-              if (/arm64\.dmg$/.test(n)) { set("dl-mac-arm", a); size("dl-size-mac", mb(a)); }
-              else if (/^((?!arm64).)*\.dmg$/.test(n)) { set("dl-mac-x64", a); }
-              else if (/\.exe$/.test(n)) { set("dl-win", a); size("dl-size-win", mb(a)); }
-              else if (/\.AppImage$/.test(n)) { set("dl-linux", a); size("dl-size-linux", mb(a)); }
-            });
-          })
-          .catch(function () { /* fallback links stay */ });
       })();
     </script>
   </body>

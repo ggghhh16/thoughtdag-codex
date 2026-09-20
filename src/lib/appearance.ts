@@ -12,6 +12,20 @@ export type Paper = 'plain' | 'grid';
 const LS_LIGHTING = 'thoughtdag.lighting';
 const LS_PAPER = 'thoughtdag.paper';
 
+function loadLighting(): Lighting {
+  const raw = localStorage.getItem(LS_LIGHTING);
+  return raw === 'light' || raw === 'dark' || raw === 'system' ? raw : 'dark';
+}
+
+function loadPaper(): Paper {
+  const raw = localStorage.getItem(LS_PAPER);
+  // `dot` was an early name for the texture-free canvas. Accept it as a
+  // legacy value, but normalize to the current public `plain` state.
+  if (raw === 'grid') return 'grid';
+  if (raw === 'plain' || raw === 'dot') return 'plain';
+  return 'plain';
+}
+
 const media = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
 function resolve(lighting: Lighting): 'light' | 'dark' {
@@ -37,8 +51,9 @@ interface AppearanceState {
 }
 
 export const useAppearance = create<AppearanceState>((set, get) => ({
-  lighting: (localStorage.getItem(LS_LIGHTING) as Lighting) || 'light',
-  paper: (localStorage.getItem(LS_PAPER) as Paper) || 'plain',
+  // New installs begin in the dark theme; an existing explicit choice wins.
+  lighting: loadLighting(),
+  paper: loadPaper(),
   resolved: 'light',
   setLighting: (lighting) => {
     localStorage.setItem(LS_LIGHTING, lighting);

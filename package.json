@@ -1,30 +1,34 @@
 {
-  "name": "thoughtdag",
+  "name": "thoughtdag-codex",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "server": "node server.mjs",
+    "codex:login": "codex login",
+    "codex:status": "codex login status",
+    "postinstall": "node scripts/patch-codex-sdk.mjs && node scripts/prepare-windows-launcher.mjs",
     "build": "tsc -b && vite build",
+    "test": "npm run test:sdk-patch && npm run test:codex && npm run test:context && npm run test:url-safety && npm run test:integrity && npm run test:security",
+    "test:sdk-patch": "node --test scripts/codex-sdk-patch.test.mjs scripts/windows-hidden-console-launcher.test.mjs",
+    "test:codex": "node --test scripts/codex-adapter.test.mjs scripts/codex-app-server-client.test.mjs scripts/codex-persistent-adapter.test.mjs",
+    "test:context": "node --experimental-strip-types --test scripts/context-url.test.mjs scripts/codex-link.test.mjs scripts/desktop-storage-migration.test.mjs scripts/codex-thread-import.test.mjs",
+    "test:url-safety": "node --test scripts/safe-remote-url.test.mjs",
     "lint": "eslint .",
     "smoke": "node scripts/smoke.mjs",
     "preview": "vite preview",
-    "desktop": "npm run build && cd desktop && electron ."
+    "desktop": "npm run build && npm --prefix desktop start",
+    "test:integrity": "node --experimental-strip-types --test scripts/output-integrity.test.mjs",
+    "test:security": "node --test scripts/http-security.test.mjs scripts/safe-remote-url.test.mjs && node scripts/test-markdown-marks.mjs"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.8",
-    "@ai-sdk/deepseek": "^3.0.5",
-    "@ai-sdk/google": "^4.0.8",
-    "@ai-sdk/mcp": "^2.0.7",
-    "@ai-sdk/openai": "^4.0.7",
-    "@ai-sdk/openai-compatible": "^3.0.5",
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@joplin/turndown-plugin-gfm": "^1.0.67",
+    "@openai/codex-sdk": "0.154.0",
     "@tailwindcss/vite": "^4.1.18",
     "@xyflow/react": "^12.10.0",
-    "ai": "^7.0.15",
     "cors": "^2.8.6",
     "defuddle": "^0.19.2",
     "dompurify": "^3.4.13",
@@ -42,11 +46,11 @@
     "rehype-highlight": "^7.0.2",
     "rehype-katex": "^7.0.1",
     "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "tailwindcss": "^4.1.18",
     "turndown": "^7.2.4",
-    "zhipu-ai-provider": "^0.3.1",
     "zustand": "^5.0.11"
   },
   "devDependencies": {
@@ -65,10 +69,9 @@
     "typescript-eslint": "^8.48.0",
     "vite": "^7.3.1"
   },
-  "description": "An infinite canvas where LLM conversations grow into an editable thought graph. Read papers into maps; every answer knows where it came from.",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/chenxiachan/thoughtdag.git"
+  "description": "A local-first editable thought graph powered by the local Codex agent.",
+  "engines": {
+    "node": ">=22.12.0"
   },
   "keywords": [
     "llm",
@@ -77,7 +80,16 @@
     "react-flow",
     "ai",
     "knowledge-graph",
-    "research-tool"
+    "research-tool",
+    "codex"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ggghhh16/thoughtdag-codex.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ggghhh16/thoughtdag-codex/issues"
+  },
+  "homepage": "https://github.com/ggghhh16/thoughtdag-codex#readme"
 }

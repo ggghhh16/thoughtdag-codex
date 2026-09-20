@@ -1,595 +1,122 @@
+import { randomUUID } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
-import { streamText, generateText, tool, stepCountIs, smoothStream } from 'ai';
-import { z } from 'zod';
-import { createZhipu } from 'zhipu-ai-provider';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { createMCPClient } from '@ai-sdk/mcp';
-import { Experimental_StdioMCPTransport as StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createAnthropic } from '@ai-sdk/anthropic';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createDeepSeek } from '@ai-sdk/deepseek';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs';
-// Inside Electron's utilityProcess pdfjs does not consider itself in Node
-// (process.versions.electron flips its environment check) and refuses to run
-// without a workerSrc. Point its fake worker at the real worker module so
-// text extraction works in the desktop app — silently broken there before.
+import {
+  CODEX_LOGICAL_MODEL,
+  CodexAdapterError,
+  createCodexAdapter,
+  isAbortError,
+  normalizePermissionMode,
+  redactSensitive,
+} from './server/codex-adapter.mjs';
+import {
+  DESKTOP_CONTROL_HEADER,
+  createProjectRegistry,
+} from './server/project-registry.mjs';
+import { createSafeRemoteUrlGuard } from './server/safe-remote-url.mjs';
+import { readBoundedText } from './server/pinned-http.mjs';
+import { createLocalRequestGuard, requireLoopbackHost } from './server/http-security.mjs';
+
+// In Electron utilityProcess, pdfjs does not consider itself in Node because
+// process.versions.electron changes its environment check. Point its fake
+// worker at the bundled worker module so desktop extraction keeps working.
 if (process.versions.electron) {
   GlobalWorkerOptions.workerSrc = import.meta.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs');
 }
-import { execSync, execFileSync } from 'child_process';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
 
-// ─── Environment ────────────────────────────────────────────────
-// Minimal .env loader (avoids dotenv dependency and Node --env-file version quirks)
+// Minimal .env loader avoids another runtime dependency and works on Node 18.
 try {
   for (const line of fs.readFileSync(new URL('.env', import.meta.url), 'utf8').split('\n')) {
-    const m = line.match(/^\s*([\w.]+)\s*=\s*(.*?)\s*$/);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
+    const match = line.match(/^\s*([\w.]+)\s*=\s*(.*?)\s*$/);
+    if (match && !(match[1] in process.env)) process.env[match[1]] = match[2];
   }
-} catch { /* .env is optional — env vars may come from the shell */ }
+} catch { /* .env is optional */ }
 
-const ZHIPU_KEY = process.env.ZHIPU_API_KEY;
-const QWEN_KEY = process.env.DASHSCOPE_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
+const HOST = requireLoopbackHost(process.env.HOST || '127.0.0.1');
+const codexAdapter = createCodexAdapter();
+const projectRegistry = createProjectRegistry();
 
-// Optional dependency: poppler's pdftoppm renders PDF pages as images for Vision.
-// Without it, PDF attachments fall back to extracted text only.
+// Optional dependency: poppler's pdftoppm renders PDF pages as images for
+// vision. PDF text extraction remains available when it is absent.
 let POPPLER_AVAILABLE = true;
 try {
-  execSync('pdftoppm -v', { stdio: 'ignore' });
+  execFileSync('pdftoppm', ['-v'], { stdio: 'ignore', windowsHide: true });
 } catch {
   POPPLER_AVAILABLE = false;
-  console.warn('⚠ pdftoppm (poppler) not found — PDF page rendering disabled, text-only fallback.');
-  console.warn('  Install with: brew install poppler');
+  console.warn('pdftoppm was not found; PDF page rendering is disabled.');
 }
-
-// ─── Model Configuration (Vercel AI SDK providers) ──────────────
-// Every provider registers only when its API key is present in .env.
-// Default model IDs can be overridden per provider with <PREFIX>_MODELS
-// (comma-separated), so new model releases never require a code change:
-//   OPENAI_MODELS="gpt-5.2,gpt-5.2-mini"  ANTHROPIC_MODELS="claude-opus-4-8"
-
-// id → { name, provider, vision, visionFallback?, model(), providerOptions? }
-const modelRegistry = {};
-
-const envModels = (prefix, fallback) => {
-  const raw = process.env[`${prefix}_MODELS`];
-  return raw ? raw.split(',').map((s) => s.trim()).filter(Boolean) : fallback;
-};
-const register = (ids, provider, make, opts = {}) => {
-  for (const id of ids) {
-    const shortId = id.includes('/') ? id.split('/').slice(1).join('/') : id;
-    modelRegistry[id] = { name: `${shortId} (${provider})`, provider, vision: opts.vision ?? true, model: () => make(id), ...opts, ...(opts.perId?.[id] || {}) };
-  }
-};
-
-if (ZHIPU_KEY) {
-  const zhipu = createZhipu({ apiKey: ZHIPU_KEY, baseURL: 'https://open.bigmodel.cn/api/paas/v4' });
-  // zhipu-ai-provider 0.3.1 DROPS image bytes (it sends image_url
-  // "data:image/png;base64," with an EMPTY payload — every image reads as
-  // "blank"). The same endpoint speaks the OpenAI protocol, and that
-  // provider's image conversion works, so vision goes through it.
-  const zhipuCompat = createOpenAICompatible({
-    name: 'zhipu', apiKey: ZHIPU_KEY, baseURL: 'https://open.bigmodel.cn/api/paas/v4',
-  });
-  modelRegistry['glm-4.5-flash'] = {
-    name: 'GLM-4.5 Flash · free', provider: 'Zhipu', vision: false, visionFallback: 'glm-4v-flash',
-    model: () => zhipu('glm-4.5-flash'),
-    // GLM-4.5 defaults to hidden "thinking" — disable for fast first tokens
-    providerOptions: { zhipu: { thinking: { type: 'disabled' } } },
-  };
-  modelRegistry['glm-4v-flash'] = {
-    name: 'GLM-4V Flash · free vision', provider: 'Zhipu', vision: true, model: () => zhipuCompat('glm-4v-flash'),
-  };
-}
-
-if (QWEN_KEY) {
-  const qwen = createOpenAICompatible({
-    name: 'dashscope', apiKey: QWEN_KEY,
-    baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
-  });
-  modelRegistry['qwen-plus'] = {
-    name: 'Qwen Plus', provider: 'Qwen', vision: false, visionFallback: 'qwen-vl-plus', model: () => qwen('qwen-plus'),
-  };
-  modelRegistry['qwen-vl-plus'] = {
-    name: 'Qwen VL Plus', provider: 'Qwen', vision: true, model: () => qwen('qwen-vl-plus'),
-  };
-}
-
-if (process.env.OPENAI_API_KEY) {
-  const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  register(envModels('OPENAI', ['gpt-5.1', 'gpt-5-mini']), 'OpenAI', (id) => openai(id));
-}
-
-if (process.env.ANTHROPIC_API_KEY) {
-  const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  register(envModels('ANTHROPIC', ['claude-sonnet-5', 'claude-haiku-4-5']), 'Anthropic', (id) => anthropic(id));
-}
-
-if (process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-  const google = createGoogleGenerativeAI({
-    apiKey: process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-  });
-  register(envModels('GOOGLE', ['gemini-2.5-pro', 'gemini-2.5-flash']), 'Google', (id) => google(id));
-}
-
-if (process.env.DEEPSEEK_API_KEY) {
-  const deepseek = createDeepSeek({ apiKey: process.env.DEEPSEEK_API_KEY });
-  // deepseek-chat/-reasoner were retired 2026-07-24 in favor of explicit V4 ids
-  register(envModels('DEEPSEEK', ['deepseek-v4-flash', 'deepseek-v4-pro']), 'DeepSeek', (id) => deepseek(id), { vision: false });
-}
-
-if (process.env.MOONSHOT_API_KEY) {
-  // Kimi (Moonshot) — OpenAI-compatible; .cn endpoint by default,
-  // set MOONSHOT_BASE_URL=https://api.moonshot.ai/v1 for the intl platform
-  const moonshot = createOpenAICompatible({
-    name: 'moonshot', apiKey: process.env.MOONSHOT_API_KEY,
-    baseURL: process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.cn/v1',
-  });
-  register(envModels('MOONSHOT', ['kimi-k2-turbo-preview', 'kimi-latest']), 'Kimi', (id) => moonshot(id), { vision: false });
-}
-
-// Vision capability per slug from OpenRouter's public model list — the
-// registry defaults would otherwise claim every routed model sees images.
-async function applyOpenRouterVision() {
-  const slugged = Object.keys(modelRegistry).filter((id) => id.includes('/'));
-  if (slugged.length === 0) return;
-  try {
-    const res = await fetch('https://openrouter.ai/api/v1/models');
-    const { data } = await res.json();
-    const caps = new Map(data.map((m) => [m.id, m.architecture?.input_modalities ?? []]));
-    for (const id of slugged) {
-      const mods = caps.get(id);
-      if (mods) modelRegistry[id].vision = mods.includes('image');
-    }
-    console.log(`OpenRouter capabilities: ${slugged.filter((id) => modelRegistry[id].vision).length}/${slugged.length} vision-capable`);
-  } catch { /* offline: flags stay conservative (text-only) */ }
-}
-
-if (process.env.OPENROUTER_API_KEY) {
-  // Gateway to 300+ models — put any "vendor/model" slugs in OPENROUTER_MODELS
-  const openrouter = createOpenAICompatible({
-    name: 'openrouter', apiKey: process.env.OPENROUTER_API_KEY,
-    baseURL: 'https://openrouter.ai/api/v1',
-  });
-  // Ask OpenRouter to include reasoning/thinking output; models that don't
-  // reason ignore the flag (it's a gateway-level parameter, normalized away)
-  register(envModels('OPENROUTER', ['openrouter/auto']), 'OpenRouter', (id) => openrouter(id), {
-    vision: false,
-    providerOptions: { openrouter: { reasoning: { enabled: true } } },
-  });
-  void applyOpenRouterVision();
-}
-
-if (process.env.OLLAMA_MODELS) {
-  // Local models, fully offline — e.g. OLLAMA_MODELS="qwen3:8b,llama3.2"
-  const ollama = createOpenAICompatible({
-    name: 'ollama', apiKey: 'ollama',
-    baseURL: (process.env.OLLAMA_BASE_URL || 'http://localhost:11434') + '/v1',
-  });
-  register(envModels('OLLAMA', []), 'Ollama', (id) => ollama(id), { vision: false });
-}
-
-if (Object.keys(modelRegistry).length === 0) {
-  console.warn(
-    '\n⚠ No LLM API key in .env — starting empty. 未在 .env 找到任何 LLM API key。\n' +
-    '  The app will ask for an OpenRouter key in the browser on first load.\n' +
-    '  Or: cp .env.example .env and fill in any key (ZHIPU_API_KEY is free).\n'
-  );
-}
-
-let DEFAULT_MODEL = ZHIPU_KEY ? 'glm-4.5-flash' : Object.keys(modelRegistry)[0];
-
-// Choose model entry: if images are attached and the model is text-only,
-// switch to its provider's vision counterpart — or, failing that, any
-// registered vision-capable model.
-function resolveModel(modelId, hasImages, reqProviders) {
-  // per-request overlay from browser-supplied providers; .env wins on collision
-  const reg = reqProviders?.length ? { ...providerEntries(reqProviders), ...modelRegistry } : modelRegistry;
-  const fallbackId = modelRegistry[DEFAULT_MODEL] ? DEFAULT_MODEL : Object.keys(reg)[0];
-  const pickedId = reg[modelId] ? modelId : fallbackId;
-  const entry = reg[pickedId];
-  if (!entry) return null; // empty registry: no .env key and no request providers
-  // Vision reroute is never silent: the caller gets who actually answers
-  // (reroutedFrom), streams it to the client, and can fall back to the
-  // original model with companion text if the vision stand-in blows up.
-  // Only a DECLARED text-only model reroutes; unknown vision ships the
-  // images optimistically (the first real request is the probe — the
-  // client records the verdict and the next run takes the right lane).
-  if (hasImages && entry.vision === false) {
-    if (entry.visionFallback && reg[entry.visionFallback]) {
-      return { entry: reg[entry.visionFallback], id: entry.visionFallback, reroutedFrom: pickedId };
-    }
-    const found = Object.entries(reg).find(([, m]) => m.vision);
-    if (found) return { entry: found[1], id: found[0], reroutedFrom: pickedId };
-  }
-  return { entry, id: pickedId };
-}
-
-// Convert our wire format ({role, content}[] + images[]) to AI SDK inputs.
-// Base directive prepended to EVERY generation: models default to their
-// training-cutoff sense of "now" (bad for temporal questions and search
-// decisions), drift into English on weak models, and would otherwise echo
-// the canvas' provenance markers back into answers.
-function baseDirective() {
-  return [
-    `Current date: ${new Date().toISOString().slice(0, 10)}.`,
-    'Respond in the language of the latest user message unless asked otherwise.',
-    'Bracketed markers such as [Note], [Reference: …], [Link snapshot: …], [Important]…[/Important] and [Stale: …] are provenance labels attached to your context by the canvas. Use them to judge where information came from and how much to trust it; never repeat the markers themselves in your answer.',
-  ].join(' ');
-}
-
-// System messages are lifted into the top-level `system` option (AI SDK v7
-// rejects system roles inside `messages`); images attach to the last user
-// message, like the previous pi-ai bridge.
-function toSdkPrompt(messages, images) {
-  const systemParts = [];
-  const out = [];
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i];
-    if (m.role === 'system') {
-      systemParts.push(m.content);
-      continue;
-    }
-    const isLastUser = i === messages.length - 1 && m.role === 'user';
-    if (isLastUser && images && images.length > 0) {
-      out.push({
-        role: 'user',
-        content: [
-          { type: 'text', text: m.content },
-          // 'file' parts — the 'image' part type is deprecated in AI SDK v7
-          ...images.map((img) => ({ type: 'file', data: img.data, mediaType: img.mimeType || 'image/png' })),
-        ],
-      });
-    } else {
-      out.push({ role: m.role, content: m.content });
-    }
-  }
-  const system = [baseDirective(), ...systemParts].join('\n\n');
-  return { system, messages: out };
-}
-
-// ─── Web search tool (Zhipu Web Search API, ¥0.01/query) ───────
-// Registered as an AI SDK tool: the MODEL decides when to search.
-
-// Engine tier is configurable (search_pro returns noticeably better
-// sources at ~3x the price); document-farm / Q&A-farm domains are filtered
-// out — they dominate search_std results and pollute research answers.
-const SEARCH_ENGINE = process.env.ZHIPU_SEARCH_ENGINE || 'search_std';
-const BLOCKED_DOMAINS = [
-  'doc88.com', 'docin.com', 'book118.com', 'renrendoc.com', 'taodocs.com',
-  'wenku.baidu.com', 'zhidao.baidu.com', 'baijiahao.baidu.com',
-  'wenwen.sogou.com', 'zhihu.com', '360doc.com', 'docs.qq.com', 'jianshu.com',
-  ...(process.env.SEARCH_BLOCK_DOMAINS || '').split(',').map((d) => d.trim()).filter(Boolean),
-];
-const isBlockedUrl = (url) => {
-  try { const h = new URL(url).hostname; return BLOCKED_DOMAINS.some((d) => h === d || h.endsWith(`.${d}`)); }
-  catch { return false; }
-};
-
-// AnySearch: a keyless aggregator engine (api.anysearch.com). Anonymous
-// calls are metered per client IP — running on the user's own machine,
-// that means per-user quota with zero config. An optional key (env or
-// per-request) lifts the quota. No CORS on their end, so this only ever
-// runs server-side; the hosted worker mirrors it but requires a key
-// (proxying anonymous traffic would pool every user onto one egress IP).
-const ANYSEARCH_KEY = process.env.ANYSEARCH_API_KEY || '';
-async function anySearchWeb(query, count = 5, key = ANYSEARCH_KEY) {
-  const r = await fetch('https://api.anysearch.com/v1/search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) },
-    body: JSON.stringify({ query, max_results: Math.min(count * 2, 10) }),
-    signal: AbortSignal.timeout(30000),
-  });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok || data.code !== 0) {
-    const code = data?.data?.error_code || data?.error_code || '';
-    if (String(code).includes('quota')) throw new Error('search quota for today is used up — resets tomorrow, or set ANYSEARCH_API_KEY in .env');
-    throw new Error(data?.message || `anysearch HTTP ${r.status}`);
-  }
-  return (data.data?.results || [])
-    .filter((x) => !isBlockedUrl(x.url))
-    .slice(0, count)
-    .map((x) => ({
-      title: x.title || x.url,
-      url: x.url,
-      content: (x.snippet || x.content || '').slice(0, 600),
-      date: x.date || undefined,
-    }));
-}
-
-// A GLM interface configured in the BROWSER can power search too (same key
-// shape as the .env one; the international z.ai endpoint is symmetric).
-const GLM_SEARCH_BASES = ['open.bigmodel.cn', 'api.z.ai'];
-function findGlmSearch(providers) {
-  for (const p of (Array.isArray(providers) ? providers : [])) {
-    const base = String(p.baseURL ?? '');
-    if (p.apiKey && GLM_SEARCH_BASES.some((h) => base.includes(h))) {
-      return { key: p.apiKey, endpoint: `${base.replace(/\/$/, '')}/web_search` };
-    }
-  }
-  return null;
-}
-
-async function zhipuWebSearch(query, count = 5, engine = SEARCH_ENGINE, glm = null) {
-  const r = await fetch(glm?.endpoint ?? 'https://open.bigmodel.cn/api/paas/v4/web_search', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${glm?.key ?? ZHIPU_KEY}`, 'Content-Type': 'application/json' },
-    // over-fetch so filtering still leaves `count` usable results
-    body: JSON.stringify({ search_engine: engine, search_query: query, count: Math.min(count * 2, 10) }),
-  });
-  if (!r.ok) throw new Error(`web_search HTTP ${r.status}`);
-  const data = await r.json();
-  return (data.search_result || [])
-    .filter((s) => !isBlockedUrl(s.link))
-    .slice(0, count)
-    .map((s) => ({
-    title: s.title || s.link,
-    url: s.link,
-    content: (s.content || '').slice(0, 600),
-    media: s.media || undefined,
-    date: s.publish_date || undefined,
-  }));
-}
-
-// ─── MCP servers (optional, mcp.config.json) ────────────────────
-// Standard Claude-Desktop-style config: { "mcpServers": { name: {command,
-// args, env} | {url, type?, headers?} } }. Connected once at startup;
-// their tools join the same agentic loop as web/scholar search — the
-// model decides when to call them.
-
-const mcpToolsets = []; // [{ server, tools: ToolSet }]
-const mcpClients = [];
-
-async function loadMcpServers() {
-  let config;
-  try {
-    config = JSON.parse(fs.readFileSync(new URL('mcp.config.json', import.meta.url), 'utf8'));
-  } catch {
-    return; // no config file — MCP integration stays off
-  }
-  for (const [name, spec] of Object.entries(config.mcpServers || {})) {
-    try {
-      const transport = spec.url
-        ? { type: spec.type || 'http', url: spec.url, headers: spec.headers }
-        : new StdioMCPTransport({ command: spec.command, args: spec.args, env: spec.env, cwd: spec.cwd });
-      const client = await Promise.race([
-        createMCPClient({ transport, onUncaughtError: (e) => console.warn(`MCP [${name}]:`, e?.message || e) }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('connect timeout (10s)')), 10000)),
-      ]);
-      const tools = await client.tools();
-      mcpClients.push(client);
-      mcpToolsets.push({ server: name, tools });
-      console.log(`✓ MCP [${name}]: ${Object.keys(tools).length} tool(s) — ${Object.keys(tools).join(', ')}`);
-    } catch (e) {
-      console.warn(`⚠ MCP [${name}] failed to connect: ${e.message}`);
-    }
-  }
-}
-await loadMcpServers();
-
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, async () => {
-    await Promise.all(mcpClients.map((c) => c.close().catch(() => {})));
-    process.exit(0);
-  });
-}
-
-// ─── Scholarly search (free open APIs, no keys) ─────────────────
-
-// arXiv Atom API — regex-parse the stable entry fields (no XML dep needed)
-async function arxivSearch(query, maxResults = 5) {
-  const url = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&max_results=${maxResults}&sortBy=relevance`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`arXiv HTTP ${r.status}`);
-  const xml = await r.text();
-  const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map((m) => m[1]);
-  const field = (s, tag) => {
-    const m = s.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`));
-    return m ? m[1].replace(/\s+/g, ' ').trim() : '';
-  };
-  return entries.map((e) => ({
-    title: field(e, 'title'),
-    url: field(e, 'id').replace('http://', 'https://'),
-    content: field(e, 'summary').slice(0, 600),
-    media: 'arXiv',
-    date: field(e, 'published').slice(0, 10) || undefined,
-    authors: [...e.matchAll(/<name>([^<]+)<\/name>/g)].map((m) => m[1]).slice(0, 3).join(', '),
-  }));
-}
-
-// Semantic Scholar Graph API — free tier, no key (rate-limited but ample)
-async function semanticScholarSearch(query, limit = 5) {
-  const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&limit=${limit}&fields=title,abstract,year,citationCount,url,authors`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`Semantic Scholar HTTP ${r.status}`);
-  const data = await r.json();
-  return (data.data || []).map((p) => ({
-    title: p.title,
-    url: p.url || undefined,
-    content: `${(p.abstract || '').slice(0, 500)}${p.citationCount != null ? ` (cited ${p.citationCount}×)` : ''}`,
-    media: 'Semantic Scholar',
-    date: p.year ? String(p.year) : undefined,
-    authors: (p.authors || []).map((a) => a.name).slice(0, 3).join(', '),
-  }));
-}
-
-// Build the tools map for one request. `sources` accumulates every result
-// so the route can stream them back to the client; numbering is global
-// across all tools within the same generation. The MODEL decides which
-// tool to call and when; `prefs` lets the user hide whole tool groups.
-function makeTools(sources, onSearch, prefs = {}) {
-  const pushNumbered = (results) => {
-    const start = sources.length;
-    sources.push(...results);
-    if (results.length === 0) return 'No results found.';
-    return results
-      .map((r, i) =>
-        `[${start + i + 1}] ${r.title}${r.authors ? ` — ${r.authors}` : ''}${r.date ? ` (${r.date})` : ''}\n${r.url ?? ''}\n${r.content}`)
-      .join('\n\n');
-  };
-  const tools = {};
-
-  if (prefs.web !== false) {
-    tools.web_search = tool({
-      description:
-        'ONLY for current events, time-sensitive facts, or specific verifiable claims you cannot answer confidently from your own knowledge. ' +
-        'NEVER use for conceptual, definitional, reasoning or creative questions — answer those directly. ' +
-        'Results are numbered [1], [2], ... — when you use information from a result, cite it inline as [n]. At most 3 searches per answer.',
-      inputSchema: z.object({
-        query: z.string().describe('The search query, in the language most likely to find good results'),
-      }),
-      execute: async ({ query }) => {
-        onSearch?.('web_search', query);
-        // engine dispatch: an explicit 'anysearch' pref wins; otherwise GLM
-        // when a key exists (env or browser-configured), AnySearch as the
-        // keyless default for everyone else.
-        const engine = prefs.searchEngine || SEARCH_ENGINE;
-        const useAnysearch = engine === 'anysearch' || (!ZHIPU_KEY && !prefs.glm);
-        try {
-          return pushNumbered(useAnysearch
-            ? await anySearchWeb(query, 5, prefs.anysearchKey || ANYSEARCH_KEY)
-            : await zhipuWebSearch(query, 5, engine, ZHIPU_KEY ? null : prefs.glm));
-        }
-        catch (e) { return `Search failed (${e.message}) — try a different tool or answer from your knowledge.`; }
-      },
-    });
-  }
-
-  if (prefs.scholar !== false) {
-    tools.arxiv_search = tool({
-      description:
-        'Search arXiv for academic papers and preprints (physics, math, CS, ML, stats…). ' +
-        'ONLY when the user asks about papers or literature, or a claim genuinely needs a scholarly citation — not for questions you can answer directly. Returns title, authors, abstract, and link, numbered for [n] citations.',
-      inputSchema: z.object({
-        query: z.string().describe('Search terms — paper title, topic, method, or author. English works best on arXiv.'),
-      }),
-      execute: async ({ query }) => {
-        onSearch?.('arxiv_search', query);
-        try { return pushNumbered(await arxivSearch(query)); }
-        catch (e) { return `arXiv search failed (${e.message}) — try semantic_scholar or answer from your knowledge.`; }
-      },
-    });
-    tools.semantic_scholar = tool({
-      description:
-        'Search Semantic Scholar across all scholarly fields — includes citation counts, useful for judging impact and finding published (peer-reviewed) work beyond preprints. Numbered for [n] citations.',
-      inputSchema: z.object({
-        query: z.string().describe('Search terms — topic, title, or author, in English'),
-      }),
-      execute: async ({ query }) => {
-        onSearch?.('semantic_scholar', query);
-        try { return pushNumbered(await semanticScholarSearch(query)); }
-        catch (e) { return `Semantic Scholar search failed (${e.message}) — try arxiv_search or answer from your knowledge.`; }
-      },
-    });
-  }
-
-  if (prefs.mcp !== false) {
-    for (const { server, tools: ts } of mcpToolsets) {
-      for (const [tname, tdef] of Object.entries(ts)) {
-        // Provider tool-name rules: [a-zA-Z0-9_-], prefixed to avoid clashes
-        const key = `${server}_${tname}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
-        tools[key] = {
-          ...tdef,
-          execute: async (args, opts) => {
-            onSearch?.(`mcp:${server}`, `${tname} ${JSON.stringify(args ?? {}).slice(0, 60)}`);
-            return tdef.execute(args, opts);
-          },
-        };
-      }
-    }
-  }
-
-  return Object.keys(tools).length > 0 ? tools : undefined;
-}
-
-// ─── Express App ────────────────────────────────────────────────
-// Output ceiling for every generation. OpenRouter pre-authorizes the FULL
-// requested max_tokens against your balance (65k+ when unspecified), so an
-// explicit modest cap is required for small credit balances — and no answer
-// in this tool legitimately needs more.
-// Only cap output when the operator explicitly asks (env). An imposed cap
-// above a model's allowed max makes some upstreams (e.g. Moonshot) reject.
-const MAX_OUTPUT_TOKENS = process.env.MAX_OUTPUT_TOKENS ? Number(process.env.MAX_OUTPUT_TOKENS) : undefined;
 
 const app = express();
-// This proxy runs on the user's own machine (desktop shell / `npm run server`)
-// and can spawn processes — so it must NOT be reachable from the network or
-// from arbitrary websites. CORS is restricted to same-origin (desktop shell)
-// and localhost dev ports; the listen() call binds loopback only. The hosted
-// Worker deployment shares none of this file's process-spawning code.
+app.disable('x-powered-by');
+app.use(createLocalRequestGuard({ port: PORT, extraOrigins: process.env.THOUGHTDAG_ALLOWED_ORIGINS || '' }));
 const ALLOWED_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 app.use(cors({
-  origin(origin, cb) {
-    // no Origin header = same-origin / curl / server-to-server: allow
-    if (!origin || ALLOWED_ORIGIN.test(origin)) return cb(null, true);
-    cb(null, false);
+  origin(origin, callback) {
+    if (!origin || ALLOWED_ORIGIN.test(origin)) return callback(null, true);
+    callback(null, false);
   },
 }));
-app.use(express.json({ limit: '50mb' })); // Support image uploads
+app.use(express.json({ limit: '384mb' }));
 
-// PDF text extraction (pdfjs-dist) + page rendering (pdftoppm/poppler)
+// PDF text extraction (pdfjs-dist) + optional page rendering (pdftoppm).
 app.post('/api/pdf-extract', async (req, res) => {
+  let tempDirectory;
   try {
-    const { base64, renderImages = true } = req.body;
-    // dpi is coerced to a bounded integer BEFORE it can reach a subprocess.
-    // Combined with execFileSync (no shell) below, an injection payload here
-    // is impossible — but validating anyway keeps the value sane.
+    const { base64, renderImages = true } = req.body ?? {};
     const dpi = Math.min(300, Math.max(72, Math.round(Number(req.body?.dpi)) || 150));
     if (!base64) return res.status(400).json({ error: 'Missing base64 field' });
     const buffer = Buffer.from(base64, 'base64');
     console.log(`PDF extract: ${buffer.length} bytes, header: ${buffer.slice(0, 5).toString()}`);
 
-    // Save to temp file for pdftoppm
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-'));
-    const pdfPath = path.join(tmpDir, 'input.pdf');
+    tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-'));
+    const pdfPath = path.join(tempDirectory, 'input.pdf');
     fs.writeFileSync(pdfPath, buffer);
 
-    // 1. Extract text via pdfjs-dist
     let text = '';
     let numPages = 0;
     try {
-      const uint8 = new Uint8Array(buffer);
-      const doc = await getDocument({ data: uint8, verbosity: 0 }).promise;
-      numPages = doc.numPages;
+      const document = await getDocument({ data: new Uint8Array(buffer), verbosity: 0, isEvalSupported: false }).promise;
+      numPages = document.numPages;
       const pageTexts = [];
-      for (let i = 1; i <= numPages; i++) {
+      for (let pageNumber = 1; pageNumber <= numPages; pageNumber += 1) {
         try {
-          const page = await doc.getPage(i);
+          const page = await document.getPage(pageNumber);
           const content = await page.getTextContent();
-          pageTexts.push(content.items.map(item => item.str).join(' '));
-        } catch { pageTexts.push(''); }
+          pageTexts.push(content.items.map((item) => item.str).join(' '));
+        } catch {
+          pageTexts.push('');
+        }
       }
       text = pageTexts.join('\n\n');
-    } catch (textErr) {
-      console.warn('pdfjs text extraction failed:', textErr.message);
+      await document.destroy();
+    } catch (error) {
+      console.warn('pdfjs text extraction failed:', error?.message || 'unknown error');
     }
 
-    // 2. Render pages as images via pdftoppm (poppler) — much better quality
     const pageImages = [];
     if (renderImages && POPPLER_AVAILABLE) {
       try {
-        const outPrefix = path.join(tmpDir, 'page');
-        // execFileSync (argv array, no shell): the arguments are passed to
-        // pdftoppm directly, so no value here can ever be interpreted as a
-        // shell command. This is the root fix for the command-injection class.
-        execFileSync('pdftoppm', ['-png', '-r', String(dpi), pdfPath, outPrefix], { timeout: 60000 });
-        const files = fs.readdirSync(tmpDir).filter(f => f.startsWith('page-') && f.endsWith('.png')).sort();
-        for (const f of files) {
-          const imgBuf = fs.readFileSync(path.join(tmpDir, f));
-          pageImages.push(imgBuf.toString('base64'));
+        const outputPrefix = path.join(tempDirectory, 'page');
+        execFileSync('pdftoppm', ['-png', '-r', String(dpi), pdfPath, outputPrefix], {
+          timeout: 60000,
+          windowsHide: true,
+        });
+        const files = fs.readdirSync(tempDirectory)
+          .filter((file) => file.startsWith('page-') && file.endsWith('.png'))
+          .sort();
+        for (const file of files) {
+          pageImages.push(fs.readFileSync(path.join(tempDirectory, file)).toString('base64'));
         }
-      } catch (renderErr) {
-        console.warn('pdftoppm rendering failed:', renderErr.message);
+      } catch (error) {
+        console.warn('pdftoppm rendering failed:', error?.message || 'unknown error');
       }
     }
-
-    // Cleanup temp files
-    try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
 
     console.log(`PDF done: ${numPages} pages, ${text.length} chars, ${pageImages.length} images`);
     res.json({
@@ -598,553 +125,383 @@ app.post('/api/pdf-extract', async (req, res) => {
       images: pageImages.length > 0 ? pageImages : undefined,
       imagesUnavailable: !POPPLER_AVAILABLE || undefined,
     });
-  } catch (err) {
-    console.error('PDF extract error:', err);
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error('PDF extract error:', error?.message || 'unknown error');
+    res.status(500).json({ error: error?.message || 'PDF extraction failed' });
+  } finally {
+    if (tempDirectory) {
+      try { fs.rmSync(tempDirectory, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
   }
 });
 
-// Fetch a URL server-side (browsers can't: CORS) and return a TEXT SNAPSHOT
-// for a link node. Snapshot semantics: content is captured once, stamped,
-// and wrapped as [Link] when it enters context — web drift and prompt
-// injection are the threat model here, so no scripts, tags stripped, length
-// capped. Basic SSRF guard: http(s) only, no localhost / private ranges.
+const { fetchWithSafeRedirects } = createSafeRemoteUrlGuard();
+
+// Capture a bounded, inert text snapshot for a link node. Every redirect is
+// revalidated so a public URL cannot bounce the proxy into a private network.
 app.post('/api/fetch-url', async (req, res) => {
-  const { url } = req.body || {};
+  const { url } = req.body ?? {};
+  let timer;
   try {
-    const parsed = new URL(String(url));
-    if (!/^https?:$/.test(parsed.protocol)) throw new Error('Only http(s) URLs are supported');
-    const host = parsed.hostname;
-    if (
-      host === 'localhost' || host === '0.0.0.0' || host.endsWith('.local') ||
-      /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(host) || host === '::1' || host === '[::1]'
-    ) throw new Error('Refusing to fetch private addresses');
-
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
-    const r = await fetch(parsed.href, {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ThoughtDAG/0.1; link snapshot)' },
-    });
-    clearTimeout(timer);
-    // "Page responded" distinguishes the TARGET failing from the proxy
-    // route itself being absent (stale server → bare Express 404)
-    if (!r.ok) throw new Error(`Page responded HTTP ${r.status}`);
-    const type = r.headers.get('content-type') || '';
-    if (!/text\/html|text\/plain|application\/xhtml/.test(type)) throw new Error(`Unsupported content type: ${type}`);
-    const html = (await r.text()).slice(0, 800_000);
-
-    const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/\s+/g, ' ').trim();
+    timer = setTimeout(() => controller.abort(), 15000);
+    const response = await fetchWithSafeRedirects(url, controller.signal);
+    if (!response.ok) { await response.body?.cancel(); throw new Error(`Page responded HTTP ${response.status}`); }
+    const contentType = response.headers.get('content-type') || '';
+    if (!/text\/html|text\/plain|application\/xhtml/.test(contentType)) {
+      await response.body?.cancel();
+      throw new Error(`Unsupported content type: ${contentType}`);
+    }
+    const html = await readBoundedText(response);
+    const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '')
+      .replace(/\s+/g, ' ')
+      .trim();
     const text = html
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
       .replace(/<style[\s\S]*?<\/style>/gi, ' ')
       .replace(/<(nav|footer|header|aside)[\s\S]*?<\/\1>/gi, ' ')
       .replace(/<[^>]+>/g, ' ')
-      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
       .replace(/[ \t]+/g, ' ')
       .replace(/\s*\n\s*(\s*\n\s*)+/g, '\n\n')
-      .trim()
-      .slice(0, 15_000);
-
-    // html rides along for the client-side extraction pipeline + the
-    // reader's original view; `text` stays as the old-client fallback
+      .trim();
     res.json({ title, text, html, fetchedAt: new Date().toISOString() });
-  } catch (err) {
-    res.status(400).json({ error: err.message || 'Fetch failed' });
+  } catch (error) {
+    res.status(400).json({ error: error?.message || 'Fetch failed' });
+  } finally {
+    clearTimeout(timer);
   }
 });
 
-// List available models
-// Connected external tool servers — the UI shows an MCP toggle when non-empty
-app.get('/api/tools', (req, res) => {
-  res.json({
-    mcpServers: mcpToolsets.map(({ server, tools }) => ({
-      name: server,
-      tools: Object.keys(tools),
-    })),
+async function modelsPayload() {
+  const status = await codexAdapter.status();
+  return codexAdapter.modelsPayload(status);
+}
+
+app.get('/api/codex/status', async (_req, res) => res.json(await codexAdapter.status()));
+app.get('/api/models', async (_req, res) => res.json(await modelsPayload()));
+
+app.get('/api/codex/threads', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    projectRegistry.authenticate(req.get(DESKTOP_CONTROL_HEADER));
+    const payload = await codexAdapter.listPersistentThreads({
+      cursor: req.query.cursor,
+      limit: req.query.limit,
+      search: req.query.search,
+      archived: req.query.archived,
+    });
+    res.json(payload);
+  } catch (error) {
+    sendCodexHistoryError(res, error, 'list');
+  }
+});
+
+app.get('/api/codex/threads/:threadId', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    projectRegistry.authenticate(req.get(DESKTOP_CONTROL_HEADER));
+    res.json(await codexAdapter.readPersistentThread(req.params.threadId));
+  } catch (error) {
+    sendCodexHistoryError(res, error, 'read');
+  }
+});
+
+// The CLI owns MCP discovery, so server names are not inspected or exposed.
+// capabilities.mcp from /api/models tells the UI whether opt-in is available.
+app.get('/api/tools', (_req, res) => res.json({ mcpServers: [] }));
+
+function sendProjectRegistryError(res, error) {
+  res.status(error?.statusCode || 500).json({
+    error: safeCodexError(error),
+    code: error?.code || 'PROJECT_REGISTRY_ERROR',
   });
+}
+
+app.post('/api/desktop/projects/register', async (req, res) => {
+  try {
+    projectRegistry.authenticate(req.get(DESKTOP_CONTROL_HEADER));
+    const project = await projectRegistry.register(req.body?.path);
+    res.status(201).json({ project });
+  } catch (error) {
+    sendProjectRegistryError(res, error);
+  }
 });
 
-function modelsPayload() {
-  const models = Object.entries(modelRegistry).map(([id, m]) => ({
-    id,
-    name: m.name,
-    provider: m.provider,
-    vision: m.vision,
-  }));
+app.delete('/api/desktop/projects/:id', (req, res) => {
+  try {
+    projectRegistry.authenticate(req.get(DESKTOP_CONTROL_HEADER));
+    projectRegistry.unregister(req.params.id);
+    res.status(204).end();
+  } catch (error) {
+    sendProjectRegistryError(res, error);
+  }
+});
+
+function rejectLegacyProviderConfiguration(_req, res) {
+  res.status(410).json({
+    error: 'This is a Codex-only backend and does not accept browser provider credentials.',
+    code: 'CODEX_ONLY',
+  });
+}
+app.post('/api/probe-models', rejectLegacyProviderConfiguration);
+app.post('/api/runtime-providers', rejectLegacyProviderConfiguration);
+app.post('/api/runtime-key', rejectLegacyProviderConfiguration);
+
+const activeRequestControllers = new Set();
+
+function bindRequestAbort(req, res) {
+  const controller = new AbortController();
+  activeRequestControllers.add(controller);
+  const abort = () => {
+    if (!controller.signal.aborted) controller.abort();
+  };
+  const onClose = () => {
+    if (!res.writableEnded) abort();
+  };
+  req.once('aborted', abort);
+  res.once('close', onClose);
+  if (req.aborted || res.destroyed) abort();
   return {
-    models,
-    default: DEFAULT_MODEL ?? null,
-    // capability report: what the door sign may show, what stays hidden
-    capabilities: {
-      // AnySearch's anonymous tier makes web search keyless on local runs;
-      // a GLM key stays the default engine when present.
-      webSearch: true,
-      searchEngine: ZHIPU_KEY ? (process.env.ZHIPU_SEARCH_ENGINE || 'search_std') : 'anysearch',
-      anysearch: true,
-      scholarSearch: true,
-      vision: models.some((m) => m.vision),
+    signal: controller.signal,
+    detach() {
+      activeRequestControllers.delete(controller);
+      req.off('aborted', abort);
+      res.off('close', onClose);
     },
   };
 }
 
-app.get('/api/models', (req, res) => res.json(modelsPayload()));
-
-// Browser-supplied OpenRouter key: an alternative to .env for people who
-// try the app before touching a config file. The key lives in the BROWSER
-// (localStorage) and in this process's memory only — never written to disk.
-// The frontend re-pushes it on boot, so proxy restarts self-heal. Models
-// registered here are tagged runtime:true so a new push replaces them
-// without touching .env-registered ones.
-// ── Browser-configured providers ─────────────────────────────────
-// Any OpenAI-compatible endpoint registers at runtime: OpenRouter, OpenAI,
-// DeepSeek, Zhipu, Kimi, a local Ollama, or any custom gateway. Keys live
-// in the BROWSER (localStorage) and this process's memory only — never on
-// disk. The frontend re-pushes on boot, so proxy restarts self-heal.
-
-const isOpenRouter = (baseURL) => /openrouter\.ai/i.test(String(baseURL));
-
-/** List models from an OpenAI-compatible endpoint (the /models standard).
-    Serves the frontend's "fetch model list" step — proxied here because
-    the browser would hit CORS on most providers. */
-app.post('/api/probe-models', async (req, res) => {
-  const { baseURL, apiKey } = req.body ?? {};
-  if (!baseURL) { res.status(400).json({ error: 'baseURL required' }); return; }
-  try {
-    const r = await fetch(`${String(baseURL).replace(/\/$/, '')}/models`, {
-      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!r.ok) { res.status(r.status).json({ error: `endpoint answered HTTP ${r.status}` }); return; }
-    const body = await r.json();
-    const list = Array.isArray(body.data) ? body.data : Array.isArray(body.models) ? body.models : [];
-    const models = list.map((m) => ({
-      // Google's OpenAI-compat layer prefixes ids with "models/" — strip it
-      id: (m.id ?? m.name)?.replace?.(/^models\//, ''),
-      ...(typeof m.created === 'number' ? { created: m.created } : {}),
-      // OpenRouter ships modality metadata; elsewhere vision stays unknown
-      ...(m.architecture?.input_modalities ? { vision: m.architecture.input_modalities.includes('image') } : {}),
-      // OpenRouter/Moonshot/others publish the window; used for the
-      // client-side context budget check before a doomed request is sent
-      ...(typeof m.context_length === 'number' ? { contextLength: m.context_length } : {}),
-    })).filter((m) => m.id);
-    res.json({ models });
-  } catch (err) {
-    res.status(502).json({ error: `could not reach the endpoint: ${err.message}` });
-  }
-});
-
-// ── Stateless browser-provider handling ────────────────────────────
-// Browser-configured providers are NEVER registered into server memory:
-// every generation request carries its own provider set, an overlay
-// registry is built per request and forgotten with it. This is what makes
-// a shared public deployment safe (no cross-user key leakage) and the
-// "your key is never stored" promise literally true — a stateless handler
-// has nowhere to put it.
-
-/** Build a per-request registry overlay from browser-supplied providers. */
-function providerEntries(providers) {
-  const out = {};
-  for (const p of (Array.isArray(providers) ? providers : []).slice(0, 12)) {
-    const baseURL = String(p.baseURL ?? '').replace(/\/$/, '');
-    if (!baseURL) continue;
-    const name = String(p.name || 'Custom').slice(0, 40);
-    const make = createOpenAICompatible({
-      name: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      apiKey: p.apiKey || 'none',
-      baseURL,
-    });
-    const extra = isOpenRouter(baseURL)
-      ? { providerOptions: { openrouter: { reasoning: { enabled: true } } } }
-      : {};
-    const models = (Array.isArray(p.models) ? p.models : [])
-      .map((m) => (typeof m === 'string' ? { id: m } : m))
-      .filter((m) => m && m.id).slice(0, 60);
-    for (const m of models) {
-      if (out[m.id]) continue;
-      const shortId = m.id.includes('/') ? m.id.split('/').slice(1).join('/') : m.id;
-      out[m.id] = {
-        name: `${shortId} (${name})`, provider: name,
-        // three states, kept honest: true = send images, false = reroute,
-        // undefined = nobody knows — send optimistically and let the
-        // client's lazy capability learning record the verdict
-        vision: m.vision ?? (openRouterCaps?.has(m.id) ? openRouterCaps.get(m.id).includes('image') : undefined),
-        model: () => make(m.id), ...extra,
-        ...(isOpenRouter(baseURL) ? { online: () => make(`${m.id}:online`) } : {}),
-      };
-    }
-  }
-  return out;
+function safeCodexError(error) {
+  return redactSensitive(error?.message || 'Codex request failed', { env: process.env })
+    .replace(/[\r\n]+/g, ' ')
+    .slice(0, 1000);
 }
 
-// OpenRouter's PUBLIC model-capability list — shared metadata, not user
-// state; cached so per-request overlays get vision flags without a fetch.
-let openRouterCaps = null;
-async function loadOpenRouterCaps() {
-  if (openRouterCaps) return;
-  try {
-    const res = await fetch('https://openrouter.ai/api/v1/models');
-    const { data } = await res.json();
-    openRouterCaps = new Map(data.map((m) => [m.id, m.architecture?.input_modalities ?? []]));
-  } catch { /* offline: overlay flags stay conservative */ }
+function sendCodexHistoryError(res, error, operation) {
+  const rawStatus = Number(error?.statusCode);
+  const status = Number.isInteger(rawStatus) && rawStatus >= 400 && rawStatus <= 599
+    ? rawStatus
+    : 500;
+  const code = typeof error?.code === 'string' && error.code
+    ? error.code
+    : 'CODEX_HISTORY_FAILED';
+  const diagnostic = safeCodexError(error);
+  console.error(`Codex history ${operation} error:`, code, diagnostic);
+  const validation = status === 400;
+  res.status(status).json({
+    error: validation
+      ? diagnostic
+      : operation === 'list'
+        ? 'Unable to list Codex conversations.'
+        : 'Unable to read the requested Codex conversation.',
+    code,
+  });
 }
 
-/** Stateless echo: the model list this provider set would serve (.env models included). */
-async function modelsPayloadFor(providers) {
-  if ((providers ?? []).some((p) => isOpenRouter(p?.baseURL))) await loadOpenRouterCaps();
-  const overlay = providerEntries(providers);
-  const base = modelsPayload();
-  const extra = Object.entries(overlay)
-    .filter(([id]) => !modelRegistry[id]) // .env wins on collision
-    .map(([id, m]) => ({ id, name: m.name, provider: m.provider, vision: m.vision }));
-  const models = [...base.models, ...extra];
+function codexErrorBody(error) {
   return {
-    ...base,
-    models,
-    default: base.default ?? extra[0]?.id ?? null,
-    capabilities: {
-      ...base.capabilities,
-      webSearch: base.capabilities.webSearch || Object.values(overlay).some((m) => m.online) || !!findGlmSearch(providers),
-      vision: models.some((m) => m.vision),
-    },
+    error: `[${CODEX_LOGICAL_MODEL}] ${safeCodexError(error)}`,
+    code: error?.code || 'CODEX_REQUEST_FAILED',
   };
 }
 
-app.post('/api/runtime-providers', async (req, res) => {
-  res.json(await modelsPayloadFor(req.body?.providers));
-});
+const FORBIDDEN_PROJECT_FIELDS = [
+  'path',
+  'cwd',
+  'directory',
+  'project',
+  'projectPath',
+  'projectDirectory',
+  'workingDirectory',
+];
 
-// Legacy single-OpenRouter-key endpoint: a thin shim so keys stored by
-// earlier builds keep working until the frontend migrates them.
-app.post('/api/runtime-key', async (req, res) => {
-  const { key, models } = req.body ?? {};
-  if (key) {
-    try {
-      const probe = await fetch('https://openrouter.ai/api/v1/auth/key', {
-        headers: { Authorization: `Bearer ${key}` },
+async function resolveGenerationContext(body = {}) {
+  for (const field of FORBIDDEN_PROJECT_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(body, field)) {
+      throw new CodexAdapterError('Generation requests accept projectId, not project directory paths.', {
+        code: 'RAW_PROJECT_PATH_NOT_ALLOWED',
+        statusCode: 400,
       });
-      if (!probe.ok) { res.status(401).json({ error: `key rejected (HTTP ${probe.status})` }); return; }
-    } catch (err) {
-      res.status(502).json({ error: `could not reach openrouter.ai: ${err.message}` });
-      return;
     }
   }
-  res.json(await modelsPayloadFor(key ? [{
-    name: 'OpenRouter', baseURL: 'https://openrouter.ai/api/v1', apiKey: key,
-    models: (Array.isArray(models) && models.length > 0 ? models : ['openrouter/auto']),
-  }] : []));
-});
+  const projectDirectory = await projectRegistry.resolve(body.projectId);
+  const selection = await codexAdapter.resolveModelSelection({
+    model: body.model,
+    reasoningEffort: body.reasoningEffort,
+    modelSpeed: body.modelSpeed,
+  });
+  return {
+    model: selection.modelId,
+    reasoningEffort: selection.reasoningEffort,
+    modelSpeed: selection.modelSpeed,
+    permissionMode: normalizePermissionMode(body.permissionMode),
+    projectDirectory,
+  };
+}
 
-// Non-streaming endpoint (background summaries)
-app.post('/api/claude', async (req, res) => {
-  const { messages, model: modelId, images, providers } = req.body;
-  const resolved = resolveModel(modelId || DEFAULT_MODEL, images && images.length > 0, providers);
-  if (!resolved) { res.status(503).json({ error: 'No model configured. Add an API key first.' }); return; }
-  const { entry, id: actualModelId } = resolved;
-
+app.post('/api/codex', async (req, res) => {
+  const { messages, images, webSearch, scholarSearch, mcpTools } = req.body ?? {};
+  const requestAbort = bindRequestAbort(req, res);
   try {
-    const prompt = toSdkPrompt(messages, images);
-    const { text, usage } = await generateText({
-      maxOutputTokens: MAX_OUTPUT_TOKENS,
-      model: entry.model(),
-      system: prompt.system,
-      messages: prompt.messages,
-      providerOptions: entry.providerOptions,
+    const generationContext = await resolveGenerationContext(req.body ?? {});
+    const result = await codexAdapter.run({
+      messages,
+      images,
+      ...generationContext,
+      webSearch: webSearch === true,
+      scholarSearch: scholarSearch === true,
+      mcpTools,
+      signal: requestAbort.signal,
     });
-    res.json({ text, usage, model: actualModelId });
-  } catch (err) {
-    console.error('Generate error:', err);
-    res.status(500).json({ error: `[${actualModelId}] ${err.message}` });
+    if (!res.destroyed && !res.writableEnded) res.json(result);
+  } catch (error) {
+    if (!isAbortError(error) && !res.destroyed && !res.writableEnded) {
+      const message = safeCodexError(error);
+      console.error('Codex generation error:', error?.code || 'CODEX_REQUEST_FAILED', message);
+      res.status(error?.statusCode || 500).json(codexErrorBody(error));
+    }
+  } finally {
+    requestAbort.detach();
   }
 });
 
-// SSE streaming endpoint. The model decides on its own which tools to use
-// and when; `webSearch: false` / `scholarSearch: false` hide tool groups.
+const interactions = new Map();
+app.post('/api/interactions/:id', (req, res) => {
+  const pending = interactions.get(req.params.id);
+  if (!pending || req.get('X-ThoughtDAG-Interaction') !== pending.token) {
+    return res.status(404).json({ error: 'Interaction is no longer active.' });
+  }
+  interactions.delete(req.params.id);
+  pending.resolve(req.body?.result);
+  res.json({ ok: true });
+});
+
 app.post('/api/stream', async (req, res) => {
-  const { messages, model: modelId, images, webSearch, scholarSearch, mcpTools, searchEngine, providers, anysearchKey } = req.body;
-  const resolved = resolveModel(modelId || DEFAULT_MODEL, images && images.length > 0, providers);
-  if (!resolved) { res.status(503).json({ error: 'No model configured. Add an API key first.' }); return; }
-  const { entry, id: actualModelId, reroutedFrom } = resolved;
+  const { messages, images, webSearch, scholarSearch, mcpTools, codexLink } = req.body ?? {};
+  const requestAbort = bindRequestAbort(req, res);
+  let generationContext;
+  try {
+    generationContext = await resolveGenerationContext(req.body ?? {});
+  } catch (error) {
+    if (!isAbortError(error) && !res.destroyed && !res.writableEnded) {
+      const message = safeCodexError(error);
+      console.error('Codex stream validation error:', error?.code || 'CODEX_REQUEST_FAILED', message);
+      res.status(error?.statusCode || 500).json(codexErrorBody(error));
+    }
+    requestAbort.detach();
+    return;
+  }
+  let finished = false;
+  const interactionIds = new Set();
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
   });
+  res.flushHeaders?.();
 
-  // a stand-in never works in silence
-  if (reroutedFrom) res.write(`data: ${JSON.stringify({ rerouted: { from: reroutedFrom, to: actualModelId } })}\n\n`);
-
-  const sources = [];
-  // Tracks how much prose has streamed out since the LAST tool call — the
-  // synthesis-fallback trigger. (An opening line before the first search
-  // must not count as "the answer".)
-  let emittedChars = 0;
-  let charsAtLastSearch = 0;
-
-  // No local search key but an OpenRouter model: the gateway's :online
-  // variant searches instead — and the web TOOL stands down (never both,
-  // that would run two searches for one question). An explicit 'anysearch'
-  // engine pref keeps the tool loop instead.
-  const gatewayOnline = !ZHIPU_KEY && webSearch !== false && !!entry.online && searchEngine !== 'anysearch';
-  // The gateway searches without tool pings — the UI would show nothing.
-  // One frame up front lets it say "searching the web" and stamp the answer.
-  if (gatewayOnline) res.write(`data: ${JSON.stringify({ gatewaySearch: true })}\n\n`);
-
-  const tools = makeTools(
-    sources,
-    (name, query) => {
-      charsAtLastSearch = emittedChars;
-      // Progress ping so the UI can show what's being searched
-      res.write(`data: ${JSON.stringify({ tool: { name, query } })}\n\n`);
-    },
-    { web: webSearch !== false && !gatewayOnline, scholar: scholarSearch !== false, mcp: mcpTools !== false, searchEngine, glm: findGlmSearch(providers), anysearchKey }
-  );
-
-  const prompt = toSdkPrompt(messages, images);
-  if (tools) {
-    // Make sure the model always synthesizes after searching, with citation
-    // numbers that match THIS answer's search results (earlier messages in
-    // the thread may contain their own [n] citations — those must not
-    // continue the numbering).
-    const directive = [
-      'Tools are AVAILABLE, not mandatory: first decide whether your own knowledge answers the question. Conceptual, definitional, reasoning and creative questions must be answered DIRECTLY, with no tool calls. Search only when the answer depends on current events, specific verifiable facts you are unsure of, or literature citations — or when the user explicitly asks you to look something up.',
-      'After using any search tool, you MUST follow up with a complete answer that SYNTHESIZES the results in your own words — analyze and conclude, never just list the results.',
-      'Cite sources inline as [n], using EXACTLY the bracket numbers shown in this turn\'s search results (they always start at [1]). Ignore any citation numbers appearing in earlier conversation messages — they refer to different sources.',
-      'If the search results are not actually relevant to the question, say so explicitly and answer from your own knowledge instead of forcing citations.',
-      'Never end your turn immediately after a search.',
-    ].join(' ');
-    prompt.system = prompt.system ? `${prompt.system}\n\n${directive}` : directive;
-  }
+  const writeFrame = (payload) => {
+    if (finished || res.destroyed || res.writableEnded) return false;
+    return res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    if (!res.destroyed && !res.writableEnded) {
+      res.write('data: [DONE]\n\n');
+      res.end();
+    }
+  };
 
   try {
-    const result = streamText({
-      maxOutputTokens: MAX_OUTPUT_TOKENS,
-      model: gatewayOnline ? entry.online() : entry.model(),
-      system: prompt.system,
-      messages: prompt.messages,
-      providerOptions: entry.providerOptions,
-      tools,
-      experimental_transform: smoothStream({ chunking: /[\u3040-\u30ff\u4e00-\u9fff]|\S+\s+/ }),
-      stopWhen: stepCountIs(5),
-      // Force a synthesis step: from step 4 on, tools are disabled AND the
-      // instructions switch to "write the final answer now" — GLM otherwise
-      // keeps trying to search and leaks raw <tool_call> text into the answer.
-      prepareStep: ({ stepNumber }) =>
-        stepNumber >= 3 && tools
-          ? {
-              activeTools: [],
-              instructions:
-                (prompt.system ? prompt.system + '\n\n' : '') +
-                'The search tool is NO LONGER available. Based on the search results above, write your FINAL synthesized answer now, citing sources as [n]. Do not attempt any further searches and do not emit tool-call syntax.',
-            }
-          : undefined,
+    const result = await codexAdapter.runStream({
+      messages,
+      images,
+      ...generationContext,
+      webSearch: webSearch === true,
+      scholarSearch: scholarSearch === true,
+      mcpTools,
+      codexLink,
+      signal: requestAbort.signal,
+      onInteraction(message) {
+        const supported = ['item/tool/requestUserInput', 'item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval', 'mcpServer/elicitation/request'];
+        if (!supported.includes(message.method)) return Promise.reject(new Error('Unsupported interaction: ' + message.method));
+        const id = randomUUID();
+        const token = randomUUID();
+        return new Promise((resolve, reject) => {
+          const abort = () => { interactions.delete(id); interactionIds.delete(id); reject(new Error('Generation stopped.')); };
+          interactions.set(id, { token, resolve(result) { requestAbort.signal.removeEventListener('abort', abort); interactionIds.delete(id); resolve(result); } });
+          interactionIds.add(id);
+          requestAbort.signal.addEventListener('abort', abort, { once: true });
+          writeFrame({ interaction: { id, token, method: message.method, params: message.params } });
+        });
+      },
+      onEvent(event) {
+        if (event.type === 'snapshot') writeFrame({ snapshot: event.snapshot });
+        else if (event.type === 'metadata') writeFrame({ metadata: event.metadata });
+        else if (event.type === 'text') writeFrame({ text: event.text });
+        else if (event.type === 'reasoning') writeFrame({ reasoning: event.text });
+        else if (event.type === 'tool') writeFrame({ tool: event.tool });
+      },
     });
-
-    // Models occasionally leak raw tool-call markup into the text stream
-    // (e.g. when they want to search but tools are disabled). Two dialects
-    // observed: GLM's "<tool_call>...</tool_call>" and Kimi's
-    // "<|tool_calls_section_begin|>...<|tool_call_end|>" token family.
-    // Filter both, holding back a possible partial tag at the chunk tail.
-    let holdback = '';
-    const emitFiltered = (chunk) => {
-      let buf = holdback + chunk;
-      holdback = '';
-      buf = buf
-        .replace(/<tool_call>[\s\S]*?<\/tool_call>\n?/g, '')
-        // a section swallows the call blocks that have fully arrived
-        .replace(/<\|tool_calls_section_begin\|>(?:[\s\S]*?<\|tool_call_end\|>)+(?:<\|tool_calls_section_end\|>)?\n?/g, '')
-        // an orphan call block (its section was scrubbed in an earlier chunk)
-        .replace(/<\|tool_call_begin\|>[\s\S]*?<\|tool_call_end\|>\n?/g, '')
-        // stray single tokens — but never the two openers: unfinished
-        // blocks must stay intact in the holdback until their end arrives
-        .replace(/<\|tool_call(?!s_section_begin|_begin)[a-z_]*\|>/g, '');
-      const open = buf.search(/<tool_call|<\|tool_call/);
-      if (open !== -1) {
-        holdback = buf.slice(open);
-        buf = buf.slice(0, open);
-      } else {
-        // hold a tail that could be the start of either dialect's opener
-        for (let k = Math.min(buf.length, 12); k > 0; k--) {
-          const tail = buf.slice(-k);
-          if ('<tool_call'.startsWith(tail) || '<|tool_call'.startsWith(tail)) {
-            holdback = buf.slice(-k);
-            buf = buf.slice(0, -k);
-            break;
-          }
-        }
-      }
-      if (buf) {
-        emittedChars += buf.length;
-        res.write(`data: ${JSON.stringify({ text: buf })}\n\n`);
-      }
-    };
-
-    // fullStream so reasoning models (DeepSeek, Claude thinking, GLM) get
-    // their thinking forwarded on its own channel; text keeps the filter.
-    for await (const part of result.fullStream) {
-      if (part.type === 'text-delta') {
-        emitFiltered(part.text);
-      } else if (part.type === 'reasoning-delta' && part.text) {
-        res.write(`data: ${JSON.stringify({ reasoning: part.text })}\n\n`);
-      } else if (part.type === 'error') {
-        throw part.error instanceof Error ? part.error : new Error(String(part.errorText ?? part.error));
-      }
+    writeFrame({ snapshot: { text: result.text, reasoning: result.reasoning || '', commentary: result.commentary || '' } });
+    if (result.usage) writeFrame({ usage: result.usage });
+    writeFrame({
+      status: result.status || 'completed',
+      contextCompacted: result.contextCompacted === true,
+      model: result.model,
+      reasoningEffort: result.reasoningEffort || null,
+      modelSpeed: result.modelSpeed,
+      serviceTier: result.serviceTier,
+      threadId: result.threadId,
+      turnId: result.turnId,
+      threadMode: result.threadMode,
+    });
+    finish();
+  } catch (error) {
+    if (!isAbortError(error) && !res.destroyed && !res.writableEnded) {
+      const message = safeCodexError(error);
+      console.error('Codex stream error:', error?.code || 'CODEX_REQUEST_FAILED', message);
+      writeFrame(codexErrorBody(error));
+      finish();
     }
-    if (holdback && !holdback.startsWith('<tool_call')) {
-      emittedChars += holdback.length;
-      res.write(`data: ${JSON.stringify({ text: holdback })}\n\n`);
-    }
-
-    // :online closed with zero text (thinking models most of all): retry
-    // once with the plain model so the user always gets an answer.
-    if (gatewayOnline && emittedChars === 0) {
-      const retry = streamText({
-        model: entry.model(), system: prompt.system, messages: prompt.messages,
-        providerOptions: entry.providerOptions,
-      });
-      for await (const part of retry.fullStream) {
-        if (part.type === 'text-delta') { emittedChars += part.text.length; res.write(`data: ${JSON.stringify({ text: part.text })}\n\n`); }
-        else if (part.type === 'reasoning-delta' && part.text) res.write(`data: ${JSON.stringify({ reasoning: part.text })}\n\n`);
-      }
-    }
-
-    // Deterministic synthesis fallback: if the model searched but wrote
-    // almost nothing AFTER its last search (an opening "I'll look that up"
-    // before the search doesn't count), run one tool-free pass that can
-    // only answer.
-    if (sources.length > 0 && emittedChars - charsAtLastSearch < 200) {
-      const numbered = sources
-        .map((r, i) => `[${i + 1}] ${r.title}${r.authors ? ` — ${r.authors}` : ''}${r.date ? ` (${r.date})` : ''}\n${r.url ?? ''}\n${r.content}`)
-        .join('\n\n');
-      const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-      const synth = streamText({
-      maxOutputTokens: MAX_OUTPUT_TOKENS,
-        model: entry.model(),
-        system: prompt.system,
-        messages: [
-          ...prompt.messages,
-          {
-            role: 'user',
-            content:
-              `Search results:\n\n${numbered}\n\n` +
-              `Based on these results and your own knowledge, write the final synthesized answer to my previous question` +
-              `${lastUser ? ` ("${String(lastUser.content).slice(0, 200)}")` : ''}. ` +
-              'Analyze rather than list; cite sources inline as [n] using the numbers above; if the results are not relevant, say so and answer from your own knowledge.',
-          },
-        ],
-        providerOptions: entry.providerOptions,
-      });
-      for await (const part of synth.fullStream) {
-        if (part.type === 'text-delta') res.write(`data: ${JSON.stringify({ text: part.text })}\n\n`);
-        else if (part.type === 'reasoning-delta' && part.text) res.write(`data: ${JSON.stringify({ reasoning: part.text })}\n\n`);
-      }
-    }
-
-    if (emittedChars === 0) {
-      const fr = await result.finishReason.catch(() => 'unknown');
-      res.write(`data: ${JSON.stringify({ error: `Model produced no text (finish: ${fr}, model: ${actualModelId}${gatewayOnline ? ' via :online' : ''})` })}\n\n`);
-    }
-    if (sources.length > 0) {
-      res.write(`data: ${JSON.stringify({ sources })}\n\n`);
-    }
-
-    const usage = await result.totalUsage;
-    if (usage) {
-      res.write(`data: ${JSON.stringify({ usage })}\n\n`);
-    }
-
-    res.write('data: [DONE]\n\n');
-    res.end();
-  } catch (err) {
-    console.error('Stream error:', err);
-    // The vision stand-in failed (its window is usually far smaller than
-    // the chosen model's): retry ONCE with the original model, images
-    // replaced by their companion text — which is already in the context.
-    if (reroutedFrom) {
-      try {
-        const original = resolveModel(reroutedFrom, false, providers);
-        if (original) {
-          res.write(`data: ${JSON.stringify({ imageFallback: { model: reroutedFrom } })}\n\n`);
-          const plainPrompt = toSdkPrompt(messages);
-          const rescue = streamText({
-            maxOutputTokens: MAX_OUTPUT_TOKENS,
-            model: original.entry.model(),
-            system: plainPrompt.system,
-            messages: plainPrompt.messages,
-            providerOptions: original.entry.providerOptions,
-          });
-          for await (const part of rescue.fullStream) {
-            if (part.type === 'text-delta') res.write(`data: ${JSON.stringify({ text: part.text })}\n\n`);
-            else if (part.type === 'reasoning-delta' && part.text) res.write(`data: ${JSON.stringify({ reasoning: part.text })}\n\n`);
-            else if (part.type === 'error') throw part.error instanceof Error ? part.error : new Error(String(part.errorText ?? part.error));
-          }
-          const usage = await rescue.totalUsage.catch(() => null);
-          if (usage) res.write(`data: ${JSON.stringify({ usage })}\n\n`);
-          res.write('data: [DONE]\n\n');
-          res.end();
-          return;
-        }
-      } catch (rescueErr) {
-        console.error('Image-fallback rescue failed:', rescueErr);
-        err = rescueErr;
-      }
-    }
-    let message = err.message || 'LLM request failed';
-    if (/context.{0,20}(length|window)|maximum.{0,20}tokens|too (long|many tokens)|input.{0,10}too large|max_new_tokens|input validation error/i.test(message)) {
-      message = `Context exceeds the window of the model that actually ran (${actualModelId}). Prune upstream: collapse nodes to summaries, archive dead ends, or switch a reference edge back to quote depth. (${message})`;
-    } else {
-      message = `[${actualModelId}] ${message}`;
-    }
-    res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
-    res.write('data: [DONE]\n\n');
-    res.end();
+  } finally {
+    for (const id of interactionIds) interactions.delete(id);
+    requestAbort.detach();
   }
 });
 
-// ── Sign in with OpenRouter, desktop flow ──
-// The desktop shell sends the consent page to the SYSTEM browser (the user
-// is already signed in there); the callback lands here on the bundled local
-// server, and the app polls the code out. One-time read, loopback only —
-// the PKCE verifier and the minted key never pass through this file.
-let orOauthCode = null;
-app.get('/oauth/openrouter', (req, res) => {
-  orOauthCode = typeof req.query.code === 'string' ? req.query.code : null;
-  res.type('html').send(`<!doctype html><meta charset="utf-8"><title>ThoughtDAG</title>
-<body style="font-family:system-ui;display:grid;place-items:center;height:100vh;margin:0;background:#FAF9F7;color:#1f1d1a">
-<div style="text-align:center;line-height:1.7"><div style="font-size:40px">✓</div>
-<h2 style="margin:8px 0 4px">授权完成 · Authorized</h2>
-<p style="color:#6b6558">回到 ThoughtDAG 应用即可，本页可以关闭。<br/>Return to the ThoughtDAG app; this tab can be closed.</p></div>`);
-});
-app.get('/oauth/openrouter/code', (_req, res) => {
-  res.json({ code: orOauthCode });
-  orOauthCode = null;
-});
-
-// Desktop shell: serve the built app from the SAME origin as the API.
-// The production bundle uses relative /api/* paths (API_BASE=''), so the
-// same dist that runs on the Workers deployment runs here unchanged —
-// one bundle, three hosts (worker, browser+proxy, desktop shell).
 if (process.env.SERVE_DIST) {
-  const distDir = process.env.SERVE_DIST;
-  app.use(express.static(distDir));
-  // SPA fallback (Express 5: middleware, not a '*' route)
+  const distDirectory = process.env.SERVE_DIST;
+  app.use(express.static(distDirectory));
   app.use((req, res, next) => {
     if (req.method !== 'GET' || req.path.startsWith('/api/')) return next();
-    res.sendFile('index.html', { root: distDir });
+    res.sendFile('index.html', { root: distDirectory });
   });
 }
 
-// Loopback ONLY by default: this process can spawn subprocesses, so it must
-// never be reachable from the network. Opt into LAN exposure explicitly with
-// HOST=0.0.0.0 (understanding the risk) — the default keeps it on 127.0.0.1.
-const HOST = process.env.HOST || '127.0.0.1';
-app.listen(PORT, HOST, () => {
-  console.log(`ThoughtDAG proxy (Vercel AI SDK) running on http://localhost:${PORT}`);
-  console.log(`Models: ${Object.keys(modelRegistry).join(', ')}`);
-  if (!Object.values(modelRegistry).some((m) => m.vision)) {
-    console.warn('⚠ No vision model configured — image understanding & auto-extraction are disabled. Add a vision-capable key (free tier: ZHIPU_API_KEY → glm-4v-flash).');
+const httpServer = app.listen(PORT, HOST, (error) => {
+  if (error) {
+    console.error(`ThoughtDAG Codex proxy failed to listen on ${HOST}:${PORT}: ${error.message}`);
+    process.exitCode = 1;
+    return;
   }
+  console.log(`ThoughtDAG Codex proxy running on http://localhost:${PORT}`);
+  void codexAdapter.status().then((status) => {
+    console.log(`Codex status: ${status.status}; model: ${status.model}`);
+  });
 });
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => {
+    for (const controller of activeRequestControllers) controller.abort();
+    codexAdapter.close?.();
+    httpServer.close(() => process.exit(0));
+    const timer = setTimeout(() => process.exit(0), 2000);
+    timer.unref?.();
+  });
+}

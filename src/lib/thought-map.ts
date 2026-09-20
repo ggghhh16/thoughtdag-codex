@@ -1,4 +1,5 @@
 import type { ThoughtNode, ThoughtEdge } from '../types';
+import { PUBLIC_VIEWER_ORIGIN } from './viewer';
 
 // Thought map: the structure-only share image. Everything here works on
 // SHAPE — positions, kinds, takeaway marks, edge classes — never on text.
@@ -106,7 +107,7 @@ export function handPositions(g: MapStructure): Record<string, [number, number]>
   return Object.fromEntries(g.nodes.map((n) => [n.id, [n.x, n.y] as [number, number]]));
 }
 
-export const TMAP_SITE_URL = 'https://chenxiachan.github.io/thoughtdag/';
+export const TMAP_SITE_URL = PUBLIC_VIEWER_ORIGIN || '/';
 
 /** The mark a stat item wears on the sheet: ink dot for steps, hollow
  *  diamond for materials, red dot for the judgement family. The stats line
@@ -154,5 +155,5 @@ export function clampWeight(str: string, max: number): string {
 }
 
 export function attributionLine(): string {
-  return `Made with ThoughtDAG (${TMAP_SITE_URL})`;
+  return `Made with ThoughtDAG Codex (${TMAP_SITE_URL})`;
 }

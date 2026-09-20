@@ -25,7 +25,7 @@ const JUDGE_PROMPT = promptMatch[1]
 const CREDENTIAL_PATTERN = /sk-[a-zA-Z0-9_-]{8,}|api[ _-]?key|password|token|secret/i;
 
 async function judge(q, a) {
-  const res = await fetch('http://localhost:3001/api/claude', {
+  const res = await fetch('http://localhost:3001/api/codex', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

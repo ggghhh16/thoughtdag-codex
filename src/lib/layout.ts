@@ -1,5 +1,5 @@
 import type { ThoughtNode, ThoughtEdge } from '../types';
-import { getDescendantIds } from './graph';
+import { treeLayout } from './tree-layout';
 import { COLLAPSED_NODE_HEIGHT, LAYOUT_COL_WIDTH, LAYOUT_H_GAP, LAYOUT_V_GAP } from './constants';
 
 // Estimated rendered height of a node — fallback when React Flow hasn't
@@ -32,295 +32,71 @@ export function nodeHeight(node: ThoughtNode): number {
   return Math.max(node.measured?.height ?? 0, estimateNodeHeight(node));
 }
 
-/**
- * Column-Tree layout with collision resolution.
- *
- * Pass 1 — Column assignment:
- *   - Each continuation chain (first non-branch child) inherits the parent's column.
- *   - Additional children (explore / duplicate / distill / regenerate siblings)
- *     are assigned to the next available column to the right.
- *   - Multiple roots each get their own column group.
- *
- * Pass 2 — Vertical positioning:
- *   - Within a column, nodes are placed top-to-bottom in chain order.
- *   - A branch child's y aligns with (or slightly below) its parent's y.
- *
- * Pass 3 — Collision detection & nudge:
- *   - Sort all nodes by y, then by column.
- *   - Any overlap (bbox intersection + padding) pushes the lower node down.
- *   - Iterates until stable (max 5 passes).
- */
-export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): ThoughtNode[] {
-  if (allNodes.length === 0) return allNodes;
-  // Content nodes (notes / files) are user-arranged material: layout never
-  // moves them and their edges don't shape the column tree. A node whose
-  // only parent is a content node simply roots its own chain.
-  const contentIds = new Set(
-    allNodes.filter((n) => ['note', 'file', 'link', 'frame'].includes(n.data.stepKind ?? '')).map((n) => n.id)
-  );
-  const nodes = allNodes.filter((n) => !contentIds.has(n.id));
-  const edges = allEdges.filter((e) => !contentIds.has(e.source) && !contentIds.has(e.target));
-
-  const NODE_WIDTH = LAYOUT_COL_WIDTH;
-  const H_GAP = LAYOUT_H_GAP;
-  const V_GAP = LAYOUT_V_GAP;
-  const V_PAD = 24; // extra vertical padding for collision
-
-  // --- Structural edges (no cross-links) ---
-  // Structural edges drive the column tree. Cross-links normally don't —
-  // BUT if a node's ONLY incoming edge is a cross-link (user deleted the
-  // original edge and re-wired by dragging), that link IS its parent chain:
-  // adopt it so the node still stacks below its arrow-parent instead of
-  // being treated as a detached root. Watch edges are never adopted.
-  const structuralEdges = edges.filter((e) => !e.data?.isCrossLink);
-  const hasStructuralParent = new Set(structuralEdges.map((e) => e.target));
-  for (const e of edges) {
-    if (e.data?.isCrossLink && !e.data?.isWatch && !hasStructuralParent.has(e.target)) {
-      structuralEdges.push(e);
-      hasStructuralParent.add(e.target);
-    }
+/** Place only newly added nodes. Existing coordinates are user-owned;
+ * ordinary graph edits must never run a full-canvas layout over them. */
+export function layoutNewNodes(
+  allNodes: ThoughtNode[],
+  allEdges: ThoughtEdge[],
+  previousNodes: readonly ThoughtNode[],
+): ThoughtNode[] {
+  const existing = new Set(previousNodes.map(n => n.id));
+  const material = (n: ThoughtNode) => ['note', 'file', 'link', 'frame'].includes(n.data.stepKind ?? '');
+  const placed = new Map(allNodes.filter(n => existing.has(n.id) || material(n)).map(n => [n.id, n]));
+  const pending = allNodes.filter(n => !placed.has(n.id));
+  const structural = allEdges.filter(e => !e.data?.isCrossLink);
+  const incoming = new Map<string, ThoughtEdge[]>();
+  const outgoing = new Map<string, ThoughtEdge[]>();
+  for (const edge of structural) {
+    incoming.set(edge.target, [...(incoming.get(edge.target) ?? []), edge]);
+    outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge]);
   }
-  const targetIds = new Set(structuralEdges.map((e) => e.target));
-  const roots = nodes.filter((n) => !targetIds.has(n.id));
-
-  // ── Material anchors ──
-  // Layout never moves content nodes, but chains GROWN FROM them must obey
-  // the arrow grammar: the child starts BELOW its material, roughly under
-  // it — not at the canvas top as a free root. (Fixes questions asked from
-  // the reader appearing above their file node.)
-  const materialAnchors = new Map<string, { x: number; y: number }>();
-  const perMaterialCount = new Map<string, number>();
-  for (const root of roots) {
-    const mats = allEdges
-      .filter((e) => e.target === root.id && !e.data?.isCrossLink && contentIds.has(e.source))
-      .map((e) => allNodes.find((n) => n.id === e.source))
-      .filter((m): m is ThoughtNode => !!m);
-    if (mats.length === 0) continue;
-    const lowest = mats.reduce((a, b) =>
-      a.position.y + nodeHeight(a) > b.position.y + nodeHeight(b) ? a : b);
-    const k = perMaterialCount.get(lowest.id) ?? 0;
-    perMaterialCount.set(lowest.id, k + 1);
-    materialAnchors.set(root.id, {
-      x: lowest.position.x - 60 + k * (LAYOUT_COL_WIDTH + LAYOUT_H_GAP),
-      y: lowest.position.y + nodeHeight(lowest) + LAYOUT_V_GAP,
-    });
-  }
-
-  const childrenMap = new Map<string, string[]>();
-  for (const edge of structuralEdges) {
-    const list = childrenMap.get(edge.source) || [];
-    list.push(edge.target);
-    childrenMap.set(edge.source, list);
-  }
-
-  // Classify children into 3 types:
-  // 1. Continuation — first non-explore child, inherits parent column
-  // 2. Regenerate siblings — other non-explore children, columns adjacent to parent
-  // 3. Explore branches — isBranchFromSelection, columns further out
-  const exploreTargets = new Set(
-    edges.filter((e) => e.data?.isBranchFromSelection).map((e) => e.target)
-  );
-
-  function classifyChildren(parentId: string): {
-    continuation: string | null;
-    regenerates: string[];
-    explores: string[];
-  } {
-    const children = childrenMap.get(parentId) || [];
-    const nonExplore = children.filter((c) => !exploreTargets.has(c));
-    const explores = children.filter((c) => exploreTargets.has(c));
-    return {
-      continuation: nonExplore[0] ?? null,
-      regenerates: nonExplore.slice(1),
-      explores,
-    };
-  }
-
-  // --- Pass 1: Assign columns ---
-  const nodeColumn = new Map<string, number>();
-  let nextColumn = 0;
-  // Anchored chains live in VIRTUAL columns pinned to their material's x —
-  // the grid formula never sees them, collision grouping still does.
-  const VIRT_BASE = 100000;
-  let nextVirt = VIRT_BASE;
-  const colXOverride = new Map<number, number>();
-  const colX = (col: number) => colXOverride.get(col) ?? col * (NODE_WIDTH + H_GAP);
-
-  function assignColumns(nodeId: string, col: number) {
-    if (nodeColumn.has(nodeId)) return;
-    nodeColumn.set(nodeId, col);
-
-    const { continuation, regenerates, explores } = classifyChildren(nodeId);
-
-    // Continuation inherits same column
-    if (continuation) {
-      assignColumns(continuation, col);
-    }
-
-    // Regenerate siblings: columns immediately adjacent (col+1, col+2, ...).
-    // On an ANCHORED chain (virtual column) the sibling must take a fresh
-    // virtual column pinned beside the chain — arithmetic on a virtual
-    // column id would land in the grid formula at x ≈ 62 million, and
-    // feeding it into nextColumn would catapult every later root after it.
-    for (let i = 0; i < regenerates.length; i++) {
-      let regenCol: number;
-      if (col >= VIRT_BASE) {
-        regenCol = nextVirt++;
-        colXOverride.set(regenCol, colX(col) + (i + 1) * (NODE_WIDTH + H_GAP));
-      } else {
-        regenCol = col + 1 + i;
-        nextColumn = Math.max(nextColumn, regenCol + 1);
-      }
-      assignColumns(regenerates[i], regenCol);
-    }
-
-    // Explore branches: after all regenerate columns (anchored chains keep
-    // them beside the chain too, past the sibling columns)
-    let exploreOffset = 0;
-    for (const ec of explores) {
-      let exploreCol: number;
-      if (col >= VIRT_BASE) {
-        exploreCol = nextVirt++;
-        colXOverride.set(exploreCol, colX(col) + (regenerates.length + 1 + exploreOffset) * (NODE_WIDTH + H_GAP));
-        exploreOffset++;
-      } else {
-        exploreCol = nextColumn;
-        nextColumn++;
-      }
-      assignColumns(ec, exploreCol);
-    }
-  }
-
-  for (const root of roots) {
-    const anchor = materialAnchors.get(root.id);
-    if (anchor) {
-      const virtCol = nextVirt++;
-      colXOverride.set(virtCol, anchor.x);
-      assignColumns(root.id, virtCol);
+  const width = (n: ThoughtNode) => Math.max(n.measured?.width ?? 0, n.width ?? 0, LAYOUT_COL_WIDTH);
+  // Reserve the expanded card's footprint even if asking collapsed its parent.
+  const height = (n: ThoughtNode) => Math.max(nodeHeight(n), n.height ?? 0,
+    estimateNodeHeight({ ...n, data: { ...n.data, isCollapsed: false } }));
+  const pitch = LAYOUT_COL_WIDTH + LAYOUT_H_GAP;
+  while (pending.length) {
+    // Parents in the same insertion batch must be placed before their children.
+    // The fallback also terminates on malformed cyclic/dangling input.
+    const ready = pending.findIndex(n => !(incoming.get(n.id) ?? [])
+      .some(e => pending.some(p => p.id === e.source)));
+    const node = pending.splice(Math.max(0, ready), 1)[0];
+    const parentEdges = (incoming.get(node.id) ?? []).filter(e => placed.has(e.source));
+    const primary = parentEdges[0];
+    const parent = primary ? placed.get(primary.source)! : undefined;
+    const obstacles = [...placed.values()].filter(n => n.data.stepKind !== 'frame');
+    let x: number;
+    let y: number;
+    if (parent && primary) {
+      const siblings = outgoing.get(parent.id) ?? [];
+      const continuation = siblings.find(e => !e.data?.isBranchFromSelection);
+      const branches = siblings.filter(e => e !== continuation);
+      x = parent.position.x + (primary === continuation ? 0 : (branches.indexOf(primary) + 1) * pitch);
+      y = Math.max(...parentEdges.map(e => {
+        const p = placed.get(e.source)!;
+        return p.position.y + height(p) + LAYOUT_V_GAP;
+      }));
     } else {
-      const rootCol = nextColumn;
-      nextColumn++;
-      assignColumns(root.id, rootCol);
+      x = obstacles.length ? Math.max(...obstacles.map(n => n.position.x + width(n))) + LAYOUT_H_GAP : node.position.x;
+      y = node.position.y;
     }
-  }
-
-  // --- Pass 2: Vertical positioning ---
-  const nodeHeightMap = new Map<string, number>();
-  for (const node of nodes) {
-    nodeHeightMap.set(node.id, nodeHeight(node));
-  }
-
-  const positioned = new Map<string, { x: number; y: number }>();
-
-  // BFS in topological order to assign y
-  const visited = new Set<string>();
-  const queue: string[] = [...roots.map((r) => r.id)];
-
-  // Roots start at y=0; material-anchored roots start under their material
-  for (const rootId of queue) {
-    const col = nodeColumn.get(rootId) ?? 0;
-    const anchor = materialAnchors.get(rootId);
-    positioned.set(rootId, { x: colX(col), y: anchor?.y ?? 0 });
-    visited.add(rootId);
-  }
-
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    const parentPos = positioned.get(current)!;
-    const parentHeight = nodeHeightMap.get(current) || 220;
-
-    const { continuation, regenerates, explores } = classifyChildren(current);
-
-    if (continuation && !visited.has(continuation)) {
-      visited.add(continuation);
-      const col = nodeColumn.get(continuation) ?? 0;
-      positioned.set(continuation, {
-        x: colX(col),
-        y: parentPos.y + parentHeight + V_GAP,
-      });
-      queue.push(continuation);
+    // Resolve collisions by moving the NEW node down only. Never move an
+    // obstacle, and keep continuation children in their actual parent's column.
+    for (;;) {
+      const overlap = obstacles.find(n => x < n.position.x + width(n) + 24
+        && x + width(node) + 24 > n.position.x
+        && y < n.position.y + height(n) + LAYOUT_V_GAP
+        && y + height(node) + LAYOUT_V_GAP > n.position.y);
+      if (!overlap) break;
+      y = overlap.position.y + height(overlap) + LAYOUT_V_GAP;
     }
-
-    // Regenerate siblings: same y as continuation (they're alternative answers)
-    const continuationY = parentPos.y + parentHeight + V_GAP;
-    for (const rc of regenerates) {
-      if (visited.has(rc)) continue;
-      visited.add(rc);
-      const col = nodeColumn.get(rc) ?? 0;
-      positioned.set(rc, {
-        x: colX(col),
-        y: continuationY,
-      });
-      queue.push(rc);
-    }
-
-    // Explore branches: start at parent's y (slight offset for visible edge)
-    for (const ec of explores) {
-      if (visited.has(ec)) continue;
-      visited.add(ec);
-      const col = nodeColumn.get(ec) ?? 0;
-      positioned.set(ec, {
-        x: colX(col),
-        y: parentPos.y + parentHeight * 0.25,
-      });
-      queue.push(ec);
-    }
+    placed.set(node.id, { ...node, position: { x, y } });
   }
-
-  // Handle any orphan nodes (shouldn't happen, but safety)
-  for (const node of nodes) {
-    if (!positioned.has(node.id)) {
-      positioned.set(node.id, { x: 0, y: 0 });
-    }
-  }
-
-  // --- Pass 3: Collision resolution ---
-  // Group nodes by column, sort by y within each column, push down overlaps
-  const columnNodes = new Map<number, string[]>();
-  for (const node of nodes) {
-    const col = nodeColumn.get(node.id) ?? 0;
-    const list = columnNodes.get(col) || [];
-    list.push(node.id);
-    columnNodes.set(col, list);
-  }
-
-  for (let pass = 0; pass < 5; pass++) {
-    let moved = false;
-
-    for (const [, colNodeIds] of columnNodes) {
-      // Sort by current y
-      colNodeIds.sort((a, b) => (positioned.get(a)!.y) - (positioned.get(b)!.y));
-
-      for (let i = 1; i < colNodeIds.length; i++) {
-        const prevId = colNodeIds[i - 1];
-        const currId = colNodeIds[i];
-        const prevPos = positioned.get(prevId)!;
-        const currPos = positioned.get(currId)!;
-        const prevHeight = nodeHeightMap.get(prevId) || 220;
-
-        const minY = prevPos.y + prevHeight + V_PAD;
-        if (currPos.y < minY) {
-          const delta = minY - currPos.y;
-          currPos.y = minY;
-          moved = true;
-
-          // Push all descendants down too (within same column)
-          const descIds = getDescendantIds(currId, structuralEdges);
-          for (const dId of descIds) {
-            const dPos = positioned.get(dId);
-            if (dPos && nodeColumn.get(dId) === nodeColumn.get(currId)) {
-              dPos.y += delta;
-            }
-          }
-        }
-      }
-    }
-
-    if (!moved) break;
-  }
-
-  return allNodes.map((node) => {
-    const pos = positioned.get(node.id);
-    return pos ? { ...node, position: pos } : node;
-  });
+  return allNodes.map(n => placed.get(n.id)!);
 }
+
+/** Explicit tree layout; routine graph edits still use layoutNewNodes. */
+export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): ThoughtNode[] {
+  return treeLayout(allNodes, allEdges, nodeHeight);
+}
+

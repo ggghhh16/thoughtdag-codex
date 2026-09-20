@@ -4,10 +4,18 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktop', {
-  // Update flow: the shell checks/downloads/installs, the PAGE renders every
-  // prompt as in-app toasts (same look and language as the rest of the UI).
+  // This fork has no trusted update feed yet. Keep only the check bridge so
+  // the existing menu can report that state without exposing install actions.
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
-  downloadUpdate: () => ipcRenderer.invoke('update:download'),
-  installUpdate: () => ipcRenderer.invoke('update:install'),
-  onUpdateEvent: (cb) => { ipcRenderer.on('update:event', (_e, data) => cb(data)); },
+  onUpdateEvent: (cb) => {
+    const listener = (_event, data) => cb(data);
+    ipcRenderer.on('update:event', listener);
+    return () => ipcRenderer.removeListener('update:event', listener);
+  },
+  getProjectFolder: () => ipcRenderer.invoke('project:get'),
+  selectProjectFolder: () => ipcRenderer.invoke('project:select'),
+  clearProjectFolder: () => ipcRenderer.invoke('project:clear'),
+  listCodexThreads: (options) => ipcRenderer.invoke('codex-history:list', options),
+  readCodexThread: (threadId) => ipcRenderer.invoke('codex-history:read', threadId),
+  readLegacyStorage31174: () => ipcRenderer.invoke('storage:read-legacy-31174'),
 });

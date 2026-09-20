@@ -1,4 +1,4 @@
 User-agent: *
-Allow: /
+Disallow: /
 
-Sitemap: https://chenxiachan.github.io/thoughtdag/sitemap.xml
+# Configure this fork's public URL before enabling indexing.

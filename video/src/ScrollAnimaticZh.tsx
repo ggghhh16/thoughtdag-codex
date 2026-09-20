@@ -24,9 +24,7 @@ const LanguageContext = React.createContext<Language>('zh');
 const useLanguage = () => React.useContext(LanguageContext);
 
 export const SCROLL_ANIMATIC_ZH_DURATION = DURATION;
-export const SCROLL_ANIMATIC_ZH_SIZE = {width: W, height: H, fps: FPS};
 export const SCROLL_ANIMATIC_EN_DURATION = DURATION;
-export const SCROLL_ANIMATIC_EN_SIZE = {width: W, height: H, fps: FPS};
 
 const smooth = (value: number) => {
   const t = Math.max(0, Math.min(1, value));

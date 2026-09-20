@@ -11,6 +11,7 @@ import { generateId, isImeComposing } from '../utils';
 import { useT, fmt } from '../i18n';
 import { isViewerMode } from '../lib/viewer';
 import { loadAttachmentContent } from '../lib/attachment-vault';
+import { useReadingPosition } from '../lib/use-reading-position';
 import { HtmlMaterialView } from './HtmlMaterialView';
 
 // MaterialReader: the reading overlay — a VIEW onto a material node, never a
@@ -58,8 +59,6 @@ function splitByPageMarks(text: string): { page: number | null; md: string }[] {
 
 const TEXT_LAYER_PROBE_CHARS = 60; // below this across the first pages = scanned
 
-// Where you were in each material, per session — reopening finds your place.
-const scrollMemory = new Map<string, number>();
 
 export default function MaterialReader({ onLocate }: { onLocate: (id: string) => void }) {
   const readerNodeId = useUiStore((s) => s.readerNodeId);
@@ -309,7 +308,7 @@ function ReaderOverlay({ node, onLocate }: { node: ThoughtNode; onLocate: (id: s
   const flyToCanvas = (from: { left: number; top: number; width: number; height: number }) => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const ghost = document.createElement('div');
-    ghost.style.cssText = `position:fixed;left:${from.left}px;top:${from.top}px;width:${Math.max(60, from.width)}px;height:${Math.max(28, from.height)}px;border:2px solid var(--color-warm);background:color-mix(in srgb, var(--color-warm) 12%, white);border-radius:10px;z-index:200;pointer-events:none;`;
+    ghost.style.cssText = `position:fixed;left:${from.left}px;top:${from.top}px;width:${Math.max(60, from.width)}px;height:${Math.max(28, from.height)}px;border:2px solid var(--color-warm);background:color-mix(in srgb, var(--color-warm) 12%, var(--color-card));border-radius:10px;z-index:200;pointer-events:none;`;
     document.body.appendChild(ghost);
     const dx = window.innerWidth * 0.82 - from.left, dy = window.innerHeight * 0.85 - from.top;
     ghost.animate(
@@ -585,18 +584,12 @@ function ReaderOverlay({ node, onLocate }: { node: ThoughtNode; onLocate: (id: s
     }
   }, [lastTurn?.data.response, lastTurn?.data.isLoading]);
 
-  // per-material scroll memory (session): reopening finds your place.
-  // Recorded live on scroll (at unmount the DOM is already detached and
-  // reads 0); restored once the document has grown tall enough to hold it.
-  const scrollRestored = useRef(false);
-
   // p.N jump landing: scroll to the addressed page once its holder exists
   // (page holders mount with the document; sections mount immediately).
-  // Claims scrollRestored — an explicit destination beats session memory.
+  // An explicit destination takes precedence over the saved reading offset.
   useEffect(() => {
     const page = jumpRef.current?.page;
     if (!page) return;
-    scrollRestored.current = true;
     let tries = 0;
     const attempt = () => {
       const el = bodyRef.current?.querySelector(`[data-page="${page}"]`);
@@ -606,22 +599,7 @@ function ReaderOverlay({ node, onLocate }: { node: ThoughtNode; onLocate: (id: s
     window.setTimeout(attempt, 150);
   }, [doc]);
 
-  useEffect(() => {
-    const el = bodyRef.current;
-    const saved = scrollMemory.get(node.id);
-    if (!el || !saved || scrollRestored.current) return;
-    let tries = 0;
-    const attempt = () => {
-      if (scrollRestored.current) return;
-      if (el.scrollHeight - el.clientHeight >= saved) {
-        el.scrollTop = saved;
-        scrollRestored.current = true;
-        return;
-      }
-      if (++tries < 25) window.setTimeout(attempt, 100);
-    };
-    window.setTimeout(attempt, 100);
-  }, [node.id, doc]);
+  const readingRef = useReadingPosition(node.id, `material:${view}`, bodyRef, !jumpRef.current?.page);
 
   // Esc: progressive dismissal — ask bar, then the rail, then the overlay
   useEffect(() => {
@@ -761,7 +739,7 @@ function ReaderOverlay({ node, onLocate }: { node: ThoughtNode; onLocate: (id: s
 
         {/* body: document column + (optional) annotation rail */}
         <div className="flex-1 min-h-0 flex">
-        <div ref={bodyRef} onMouseUp={handleMouseUp} onScroll={(e) => scrollMemory.set(node.id, e.currentTarget.scrollTop)} className="flex-1 min-w-0 overflow-y-auto bg-wash/60">
+        <div ref={readingRef} data-reading-surface="material" onMouseUp={handleMouseUp} className="flex-1 min-w-0 overflow-y-auto bg-wash/60">
           {view === 'original' && pdfAtt && (
             doc && pdfjs ? (
               <div className="flex flex-col items-center gap-4 py-6 px-4">

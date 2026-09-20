@@ -1,21 +1,22 @@
-import { useMemo } from 'react';
-import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from '@xyflow/react';
-import { X } from 'lucide-react';
+import { useMemo, useRef, useState, type PointerEvent } from 'react';
+import { BaseEdge, EdgeLabelRenderer, useReactFlow, useStore as useFlowStore, type EdgeProps } from '@xyflow/react';
+import { ArrowLeftRight, Move, RotateCcw, X } from 'lucide-react';
 import { useStore } from '../store';
-import { routeEdge } from '../lib/edge-path';
+import { routeEdge, type Point } from '../lib/edge-path';
+import { isViewerMode } from '../lib/viewer';
+import { flushPendingWrites } from '../lib/persistence';
 import { walkUpAncestors } from '../lib/graph';
 import { referenceBlockContent } from '../store/context-builder';
 import { countTokens } from '../utils';
 import { useT, fmt } from '../i18n';
-import type { ThoughtEdge } from '../types';
+import type { ThoughtEdge, ThoughtNode } from '../types';
 
 /**
  * Custom edge registered under the 'smoothstep' type name (overrides the
  * built-in, so edges persisted before this component existed pick it up
- * with no migration). Renders as a bezier ARC with collision avoidance:
- * aligned nodes get a near-straight line, offset nodes a gentle curve,
- * and when the natural arc would cut through a card the path bends
- * sideways until it clears (see lib/edge-path). Click an edge to select
+ * with no migration). Uses smooth Bezier curves around visible cards.
+ * Aligned nodes stay straight; selected edges expose a draggable curve point.
+ * Click an edge to select
  * it — a delete button appears at its midpoint, and Delete/Backspace
  * removes it via App's key handler.
  */
@@ -25,8 +26,15 @@ export default function ThoughtEdgeView({
 }: EdgeProps<ThoughtEdge>) {
   const deleteEdges = useStore((s) => s.deleteEdges);
   const setEdgeStructural = useStore((s) => s.setEdgeStructural);
+  const reverseEdge = useStore((s) => s.reverseEdge);
   const nodes = useStore((s) => s.nodes);
   const edges = useStore((s) => s.edges);
+  // React Flow has the display-time hidden flags and current measurements.
+  const routingNodes = useFlowStore((s) => s.nodes) as ThoughtNode[];
+  const zoom = useFlowStore((s) => s.transform[2]);
+  const rf = useReactFlow();
+  const [draftBend, setDraftBend] = useState<Point | null>(null);
+  const drag = useRef<{ pointer: number; start: Point; initial: Point; latest: Point; moved: boolean } | null>(null);
   const t = useT();
 
   // The line kind IS the context weight: dashed = summary reference, solid
@@ -55,10 +63,46 @@ export default function ThoughtEdgeView({
       .filter((n) => n.id !== source && !['note', 'file', 'link'].includes(n.data.stepKind ?? ''));
     return countTokens(referenceBlockContent({ source: src, edge: { id, source, target, data } as ThoughtEdge, depth: 'quote', chain }));
   }, [selected, convertible, isRef, depth, source, target, id, nodes, edges, data, src]);
-  const { path, labelX, labelY } = useMemo(
-    () => routeEdge(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, source, target, nodes),
-    [sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, source, target, nodes],
+  const route = useMemo(
+    () => routeEdge(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, source, target, routingNodes, data?.routeSide, draftBend ?? data?.routeBend),
+    [sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, source, target, routingNodes, data?.routeSide, data?.routeBend, draftBend],
   );
+  const { path, labelX, labelY } = route;
+  const a = route.points[0], b = route.points[route.points.length - 1];
+  const currentBend = { x: labelX - (a.x + b.x) / 2, y: labelY - (a.y + b.y) / 2 };
+  const commitBend = (routeBend?: Point) => {
+    const st = useStore.getState();
+    if (!st.edges.some(e => e.id === id)) return;
+    st.pushHistory();
+    st.setEdges(st.edges.map(e => e.id === id ? { ...e, data: { ...e.data, routeBend, routeSide: undefined } } : e));
+    st.pushHistory();
+    void flushPendingWrites().catch(error => console.error('[thoughtdag] edge route save failed:', error));
+  };
+  const cancelDrag = () => { drag.current = null; setDraftBend(null); };
+  const startDrag = (e: PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation(); e.currentTarget.focus();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { pointer: e.pointerId, start: rf.screenToFlowPosition({ x: e.clientX, y: e.clientY }), initial: currentBend, latest: currentBend, moved: false };
+  };
+  const moveDrag = (e: PointerEvent<HTMLButtonElement>) => {
+    const active = drag.current;
+    if (!active || active.pointer !== e.pointerId) return;
+    e.preventDefault(); e.stopPropagation();
+    const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    const dx = p.x - active.start.x, dy = p.y - active.start.y;
+    if (!active.moved && Math.hypot(dx, dy) * zoom < 2) return;
+    active.moved = true; active.latest = { x: active.initial.x + dx, y: active.initial.y + dy };
+    setDraftBend(active.latest);
+  };
+  const finishDrag = (e: PointerEvent<HTMLButtonElement>) => {
+    const active = drag.current;
+    if (!active || active.pointer !== e.pointerId) return;
+    e.preventDefault(); e.stopPropagation();
+    if (active.moved) commitBend(active.latest);
+    cancelDrag();
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+  };
 
   // When selected, force full visibility (overrides the ancestor-dim pass)
   // and thicken the stroke as selection feedback.
@@ -71,7 +115,7 @@ export default function ThoughtEdgeView({
         style={edgeStyle}
         markerEnd={markerEnd}
         markerStart={markerStart}
-        interactionWidth={interactionWidth}
+        interactionWidth={Math.max(interactionWidth ?? 20, 24)}
       />
       {data?.focusRole === 'path' && (
         // Context Focus feed line: bright dots gliding INSIDE the solid
@@ -79,17 +123,55 @@ export default function ThoughtEdgeView({
         // dashed is taken: references)
         <path d={path} className="tdag-flow-ov" fill="none" />
       )}
-      {selected && (
+      {selected && !isViewerMode && (
         <EdgeLabelRenderer>
           <div
-            className="nodrag nopan"
+            className="nodrag nopan w-7 h-7"
             style={{
               position: 'absolute',
               pointerEvents: 'all',
-              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              transformOrigin: '0 0',
+              transform: `translate(${labelX}px, ${labelY}px) scale(${1 / zoom}) translate(-50%, -50%)`,
             }}
           >
-            <div className="flex items-center gap-1">
+            <button
+              data-edge-bend={id}
+              aria-label={t('edge.dragCurve')}
+              title={t('edge.dragCurve')}
+              onPointerDown={startDrag}
+              onPointerMove={moveDrag}
+              onPointerUp={finishDrag}
+              onPointerCancel={cancelDrag}
+              onLostPointerCapture={cancelDrag}
+              onClick={e => e.stopPropagation()}
+              onDoubleClick={e => { e.stopPropagation(); cancelDrag(); commitBend(); }}
+              onKeyDown={e => {
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelDrag(); return; }
+                const delta = e.shiftKey ? 24 : 8;
+                const vectors: Record<string, Point> = { ArrowLeft: { x: -delta, y: 0 }, ArrowRight: { x: delta, y: 0 }, ArrowUp: { x: 0, y: -delta }, ArrowDown: { x: 0, y: delta } };
+                const v = vectors[e.key];
+                if (v) { e.preventDefault(); e.stopPropagation(); commitBend({ x: currentBend.x + v.x, y: currentBend.y + v.y }); }
+              }}
+              style={{ touchAction: 'none' }}
+              className="nodrag nopan nowheel w-7 h-7 rounded-full bg-card border-2 border-accent text-accent shadow-md flex items-center justify-center cursor-grab active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-accent/50"
+            >
+              <Move size={14} />
+            </button>
+            <div className="absolute top-9 left-1/2 -translate-x-1/2 flex items-center gap-1 p-1 rounded-full bg-card border border-line shadow-md whitespace-nowrap">
+              <button
+                aria-label={t('edge.reverse')}
+                title={t('edge.reverseTitle')}
+                onClick={e => { e.stopPropagation(); reverseEdge(id); }}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-ink-muted hover:text-accent hover:bg-wash"
+              >
+                <ArrowLeftRight size={14} />
+              </button>
+              <button
+                aria-label={t('edge.resetCurve')}
+                title={t('edge.resetCurve')}
+                onClick={e => { e.stopPropagation(); commitBend(); }}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-ink-muted hover:text-accent hover:bg-wash"
+              ><RotateCcw size={14} /></button>
               {convertible && refTok > 0 && (
                 <button
                   onClick={(e) => { e.stopPropagation(); setEdgeStructural(id, isRef); }}

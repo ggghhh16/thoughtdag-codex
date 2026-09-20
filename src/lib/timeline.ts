@@ -7,11 +7,11 @@ import type { ThoughtNode, ThoughtData } from '../types';
 // secondary signal only. Undated nodes keep graph order at the head.
 
 export const DOT_COLOR: Record<string, string> = {
-  ruleout: '#ef4444',
-  decision: '#6B5CE7',
-  pivot: '#e8890c',
-  open: '#d97706',
-  insight: '#0284c7',
+  ruleout: 'var(--timeline-ruleout, #ef4444)',
+  decision: 'var(--timeline-decision, #6B5CE7)',
+  pivot: 'var(--timeline-pivot, #e8890c)',
+  open: 'var(--timeline-open, #d97706)',
+  insight: 'var(--timeline-insight, #0284c7)',
 };
 
 export type TimelineEntry = {
@@ -75,7 +75,7 @@ export function collectTimeline(nodes: ThoughtNode[], now: number): TimelineEntr
           type: type ?? undefined,
           createdAt,
           modifiedAt,
-          color: (type && DOT_COLOR[type]) || '#b8b3c7',
+          color: (type && DOT_COLOR[type]) || 'var(--timeline-muted, #b8b3c7)',
           archived: !!d.archived,
           // Second-order signal: touched noticeably after birth, and recently.
           recentlyEdited:

@@ -12,7 +12,10 @@ import { autoLayout } from './layout';
 export interface ImportableConversation {
   title: string;
   messageCount: number;
-  source: 'chatgpt' | 'claude';
+  source: 'chatgpt' | 'claude' | 'codex';
+  /** Present only for conversations read from the local Codex task store.
+      The project layer persists this stable id to prevent duplicate imports. */
+  codexThreadId?: string;
   build: () => { nodes: ThoughtNode[]; edges: ThoughtEdge[] };
 }
 

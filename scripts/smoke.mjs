@@ -1,11 +1,33 @@
 // Persistence smoke test — drives local Chrome against the dev server.
-// Prereq: `npm run dev` running on :5173. Usage: `npm run smoke`.
+// Prereq: `npm run server` and `npm run dev`. Usage: `npm run smoke`.
 // Checks: hydration completes → landing shows on empty store → injected
 // node survives a reload (IndexedDB roundtrip) → no console errors.
 import { chromium } from 'playwright-core';
+import { existsSync } from 'node:fs';
 
-const CHROME = process.env.CHROME_PATH
-  ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const browserCandidates = process.platform === 'win32'
+  ? [
+      process.env.CHROME_PATH,
+      `${process.env.PROGRAMFILES ?? ''}\\Google\\Chrome\\Application\\chrome.exe`,
+      `${process.env['PROGRAMFILES(X86)'] ?? ''}\\Google\\Chrome\\Application\\chrome.exe`,
+      `${process.env.LOCALAPPDATA ?? ''}\\Google\\Chrome\\Application\\chrome.exe`,
+      `${process.env.PROGRAMFILES ?? ''}\\Microsoft\\Edge\\Application\\msedge.exe`,
+      `${process.env['PROGRAMFILES(X86)'] ?? ''}\\Microsoft\\Edge\\Application\\msedge.exe`,
+    ]
+  : process.platform === 'darwin'
+    ? [process.env.CHROME_PATH, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
+    : [
+        process.env.CHROME_PATH,
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/microsoft-edge',
+      ];
+const CHROME = browserCandidates.find((candidate) => candidate && existsSync(candidate));
+if (!CHROME) {
+  throw new Error('No Chrome/Edge executable found. Set CHROME_PATH and retry.');
+}
 const URL = process.env.APP_URL ?? 'http://localhost:5173';
 
 const browser = await chromium.launch({ executablePath: CHROME, headless: true });
@@ -32,6 +54,7 @@ console.log('landing visible:', landing1 === 1);
 const state1 = await page.evaluate(() => ({
   hydrated: window.__store?.persist?.hasHydrated?.(),
   nodes: window.__store?.getState?.().nodes?.length,
+  theme: document.documentElement.dataset.theme,
 }));
 console.log('store state:', JSON.stringify(state1));
 
@@ -70,8 +93,9 @@ console.log('== errors ==');
 console.log(errors.length ? errors.join('\n') : '(none)');
 
 await browser.close();
-const pass = state1.hydrated === true && landing1 === 1
+const pass = state1.hydrated === true && state1.theme === 'dark' && landing1 === 1
   && state2.hydrated === true && state2.nodes === 1
-  && state2.firstQuestion === 'smoke test question' && nodeCard === 1;
+  && state2.firstQuestion === 'smoke test question' && nodeCard === 1
+  && errors.length === 0;
 console.log(pass ? 'SMOKE PASS' : 'SMOKE FAIL');
 process.exit(pass ? 0 : 1);

@@ -1,11 +1,6 @@
 name: Deploy product story to GitHub Pages
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "website/**"
-      - ".github/workflows/product-story-pages.yml"
   workflow_dispatch:
 
 permissions:

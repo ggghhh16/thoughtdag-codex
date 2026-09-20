@@ -4,14 +4,15 @@
 // and clip it → reveal both the wired Q&A and edge-less provenance-bearing note.
 // Usage: node record-hero-scene1.mjs [zh|en]   (default zh)
 // Output: video/public/scene1-<lang>.mp4 (1600×900, H.264, ≥6.5s effective).
-import { chromium } from '/Users/chatchan/Library/CloudStorage/Dropbox/Academic/1_Postdoc/ResearchIdeas/thoughtdag-main/node_modules/playwright-core/index.mjs';
+import { chromium } from 'playwright-core';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, statSync } from 'node:fs';
 
 const LANG = process.argv[2] ?? 'zh';
 if (LANG !== 'zh' && LANG !== 'en') throw new Error(`usage: node record-hero-scene1.mjs [zh|en] (got "${LANG}")`);
 
-const ROOT = '/Users/chatchan/Library/CloudStorage/Dropbox/Academic/1_Postdoc/ResearchIdeas/thoughtdag-main';
+const ROOT = fileURLToPath(new URL('../../', import.meta.url)).replace(/[\\/]$/, '');
 const RAW_DIR = `${ROOT}/.local-e2e/scene1-raw-${LANG}`;
 const OUT = `${ROOT}/video/public/scene1-${LANG}.mp4`;
 mkdirSync(RAW_DIR, { recursive: true });

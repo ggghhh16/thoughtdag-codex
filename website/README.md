@@ -1,57 +1,20 @@
-# ThoughtDAG bilingual product story
+# ThoughtDAG Codex product story
 
-This is a standalone, crawlable marketing page built around a scroll-driven
-product story. English is the default language; add `?lang=zh` or use the
-navigation toggle for Chinese. It intentionally keeps ThoughtDAG's own product
-boundary and visual semantics:
+This directory preserves the upstream bilingual, scroll-driven product story and adapts its visible setup/download boundary for the Codex fork. The context semantics remain unchanged: solid edges carry full context, branches are explicit, and deleting an edge changes the next request.
 
-- purple solid edges are full context;
-- orange branches are explicit side paths;
-- deleting an edge changes the request, not just the diagram;
-- the story ends on inspectable context rather than autonomous agents.
+The source repository is https://github.com/ggghhh16/thoughtdag-codex; no public viewer or signed installer feed is configured. The page is deliberately `noindex`, its download section shows source commands, and upstream GitHub links are labeled as upstream. Before publishing it under a new origin:
 
-It is published with GitHub Pages at:
-
-```text
-https://chenxiachan.github.io/thoughtdag/
-https://chenxiachan.github.io/thoughtdag/?lang=zh
-https://chenxiachan.github.io/thoughtdag/stories/context-repair/
-https://chenxiachan.github.io/thoughtdag/research/context-repair-pilot-v1/
-```
-
-The `product-story-pages.yml` workflow publishes this directory as a static
-artifact whenever it changes on `main`. The live app remains on Cloudflare;
-its former `/story/` route permanently redirects here.
+1. replace canonical, alternate-language, Open Graph, and JSON-LD URLs;
+2. regenerate `robots.txt` and `sitemap.xml` for that origin;
+3. configure this fork's own release/download links only after signed artifacts exist;
+4. never point the Codex fork's updater at the upstream ThoughtDAG release feed.
 
 Preview from the repository root:
 
 ```bash
-python3 -m http.server 4175
+python -m http.server 4175
 ```
 
-Then open:
+Then open <http://127.0.0.1:4175/website/>. English is the default; add `?lang=zh` or use the language toggle for Chinese.
 
-```text
-http://127.0.0.1:4175/website/
-```
-
-The page selects the final product film by both language and viewport:
-
-```text
-website/assets/thoughtdag-story-en-horizontal.mp4
-website/assets/thoughtdag-story-zh-horizontal.mp4
-website/assets/thoughtdag-story-en-vertical.mp4
-website/assets/thoughtdag-story-zh-vertical.mp4
-```
-
-Viewports up to 760px use the 9:16 vertical films. Wider viewports use the
-16:9 horizontal films. Switching the page language also switches the film,
-poster frame, accessible label, and duration.
-
-Canonical, alternate-language, Open Graph, robots, and sitemap metadata point
-to the shared public deployment.
-
-The homepage introduces the Context Repair Pilot without turning the product
-story into a report. The concise bilingual case study lives under `stories/`,
-while the English technical report and reproducibility links live under
-`research/`.
+The context-repair story and benchmark pages are retained as upstream research material. Their source links intentionally continue to point at the upstream repository.

@@ -13,8 +13,6 @@ import {
 } from 'remotion';
 
 const FPS = 30;
-const W = 1080;
-const H = 1920;
 const clamp = {
   extrapolateLeft: 'clamp',
   extrapolateRight: 'clamp',
@@ -113,7 +111,6 @@ export const STORY_VERTICAL_ZH_DURATION = sceneFrames.reduce(
   (sum, frames) => sum + frames,
   0,
 );
-export const STORY_VERTICAL_ZH_SIZE = {width: W, height: H, fps: FPS};
 
 const Brand: React.FC = () => (
   <div

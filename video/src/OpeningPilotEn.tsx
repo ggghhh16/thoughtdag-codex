@@ -15,7 +15,6 @@ const DURATION = 315;
 const clamp = {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'} as const;
 
 export const OPENING_PILOT_EN_DURATION = DURATION;
-export const OPENING_PILOT_EN_SIZE = {width: W, height: H, fps: FPS};
 
 const ink = '#1d1a24';
 const purple = '#6b5ce7';

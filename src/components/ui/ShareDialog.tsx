@@ -6,10 +6,10 @@ import { exportActiveProjectJson } from '../../lib/export';
 import { useT } from '../../i18n';
 
 // Two jobs, two lanes. LANE 1: the read-only canvas link — it CARRIES the
-// whole graph (minted against the public viewer origin, so a link made on
-// the desktop app opens for anyone); long by design, so the right channels
-// are the ones tolerant of long URLs (chat, mail, docs) and the right
-// control is Copy. LANE 2: one door — the thought-map console owns the
+// whole graph (minted against the configured viewer origin, or this app's
+// current origin); long by design, so the right channels are the ones
+// tolerant of long URLs (chat, mail, docs) and the right control is Copy.
+// LANE 2: one door — the thought-map console owns the
 // whole feed story (picture, caption, platform buttons) so entries stay few.
 export default function ShareDialog() {
   const url = useUiStore((s) => s.shareDialogUrl);

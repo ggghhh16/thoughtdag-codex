@@ -120,7 +120,7 @@ export function admissionCheck(
 
 /**
  * Fire-and-forget write judge, called after ordinary generations. Runs on
- * the server's default model (cheap/free tier), never the flagship pick.
+ * the local proxy's default Codex model, independent of node-level pins.
  */
 export function judgeMemory(question: string, response: string, projectName?: string): void {
   const { memoryEnabled, memories, setMemories } = useUiStore.getState();

@@ -2,11 +2,17 @@ import type { StoreApi } from 'zustand';
 import { walkUpAncestors } from '../lib/graph';
 import { upstreamFingerprint } from './context-builder';
 import { pruneHighlights } from '../lib/highlight-match';
-import { llmCall, llmCallStream, type ContextMessage, type ImageAttachment } from '../lib/api';
+import {
+  llmCall,
+  llmCallStream,
+  type CodexLinkRequest,
+  type CodexStreamMetadata,
+  type ContextMessage,
+  type ImageAttachment,
+} from '../lib/api';
 import { countTokens, activeSummary } from '../utils';
 import { toast, useUiStore } from '../lib/ui-store';
 import { getModelsOnce, reconcileModelId } from '../lib/use-models';
-import { contextLengthFor } from '../lib/runtime-providers';
 import { memoryContextBlock, judgeMemory } from '../lib/memory';
 import { t, fmt } from '../i18n';
 import { isViewerMode } from '../lib/viewer';
@@ -83,6 +89,64 @@ export const autoRunCounts = new Map<string, number>();
 type Set = StoreApi<StoreState>['setState'];
 type Get = StoreApi<StoreState>['getState'];
 
+/** Persistent Codex identity selected by the card's active answer version. */
+export function activeCodexLink(data: StoreState['nodes'][number]['data']): {
+  threadId: string;
+  turnId: string;
+} | undefined {
+  const index = data.responseIndex;
+  const threadId = index >= 0 ? data.codexThreadIds?.[index] : undefined;
+  const turnId = index >= 0 ? data.codexTurnIds?.[index] : undefined;
+  return typeof threadId === 'string' && threadId && typeof turnId === 'string' && turnId
+    ? { threadId, turnId }
+    : undefined;
+}
+
+/**
+ * Map the canvas topology to Codex App Server history.
+ *
+ * - the first ordinary child continues its parent's thread;
+ * - a selected-text/explicit graph branch forks at the parent's turn;
+ * - another ordinary child is a sibling alternative, so it also forks;
+ * - regenerating an answered card always forks from its structural parent
+ *   (an existing Codex turn is immutable);
+ * - roots, fan-ins and legacy parents without ids start a fresh thread.
+ */
+export function codexLinkForGeneration(
+  nodeId: string,
+  nodes: StoreState['nodes'],
+  edges: StoreState['edges'],
+): CodexLinkRequest {
+  const node = nodes.find((candidate) => candidate.id === nodeId);
+  if (!node) return { mode: 'start' };
+
+  const incoming = edges.filter((edge) => edge.target === nodeId && !edge.data?.isCrossLink);
+  // A multi-parent synthesis has no single persisted conversation to resume.
+  if (incoming.length !== 1) return { mode: 'start' };
+
+  const parent = nodes.find((candidate) => candidate.id === incoming[0].source);
+  const parentLink = parent ? activeCodexLink(parent.data) : undefined;
+  if (!parent || !parentLink) return { mode: 'start' };
+
+  const alreadyAnswered = node.data.responses.some((response) => !!response)
+    || node.data.codexTurnIds?.some((turnId) => typeof turnId === 'string' && !!turnId) === true;
+  const explicitBranch = !!node.data.branchContext
+    || node.data.isBranch
+    || incoming[0].data?.isBranchFromSelection === true;
+
+  const ordinarySiblingExists = edges.some((edge) => {
+    if (edge.source !== parent.id || edge.target === nodeId || edge.data?.isCrossLink) return false;
+    const sibling = nodes.find((candidate) => candidate.id === edge.target);
+    if (!sibling || sibling.data.archived || sibling.data.isBranch) return false;
+    return !['note', 'file', 'link', 'frame'].includes(sibling.data.stepKind ?? '');
+  });
+
+  if (alreadyAnswered || explicitBranch || ordinarySiblingExists) {
+    return { mode: 'fork', threadId: parentLink.threadId, turnId: parentLink.turnId };
+  }
+  return { mode: 'resume', threadId: parentLink.threadId, turnId: parentLink.turnId };
+}
+
 /**
  * The one streaming pipeline for filling a node's response:
  * register an AbortController (Stop button) → stream chunks into
@@ -104,6 +168,9 @@ export async function runNodeGeneration(
     autoChain?: boolean;
     /** Extra work after the final state write, before pushHistory (e.g. re-layout). */
     onSuccess?: (response: string) => void;
+    /** Explicit override for unusual generators. Ordinary Q&A topology is
+        derived automatically when this is omitted. */
+    codexLink?: CodexLinkRequest;
   },
 ): Promise<void> {
   // Read-only viewer: no generation whatsoever — belt-and-braces behind the
@@ -111,6 +178,10 @@ export async function runNodeGeneration(
   if (isViewerMode) return;
   const { question, images, onSuccess, versionMode = 'replace' } = opts;
   let { messages } = opts;
+  // Snapshot the topology before the first await. If two children are asked
+  // from one parent in the same tick, the first reserves the resume lane and
+  // the second sees it as an existing sibling and forks deterministically.
+  const codexLink = opts.codexLink ?? codexLinkForGeneration(nodeId, get().nodes, get().edges);
   if (!opts.autoChain) autoRunCounts.clear(); // a fresh user action starts a new wave
   // Supersede: abort any generation already running on this node; its late
   // callbacks are dropped via the sequence check below.
@@ -127,12 +198,16 @@ export async function runNodeGeneration(
   set((state) => ({
     nodes: state.nodes.map((n) =>
       n.id === nodeId
-        ? { ...n, data: { ...n.data, generationFailed: undefined, reasoning: undefined, restreaming: n.data.response ? true : undefined } }
+        ? { ...n, data: { ...n.data, generationFailed: undefined, generationMetadata: undefined, commentary: undefined, reasoning: undefined, restreaming: n.data.response ? true : undefined } }
         : n
     ),
   }));
 
+  let latestResponse = '';
+  let latestReasoning = '';
+  let flushPending = () => {};
   let references: Reference[] | undefined;
+  let codexMetadata: CodexStreamMetadata = {};
 
   // Model provenance: pinned override, else the global pick, else the
   // server default. A pin that isn't reachable here (imported canvas,
@@ -167,14 +242,14 @@ export async function runNodeGeneration(
     set((state) => ({
       nodes: state.nodes.map((n) => {
         if (n.id !== nodeId) return n;
-        // keep (response, generatedBy, reasoning, generatedAt, editedAt) tuples aligned through the empty-filter.
+        // Keep every per-version tuple aligned through the empty-filter.
         // A FAILED replace also keeps them: the failure placeholder must not
         // wipe real earlier versions (the failure banner offers switching
         // back). Stale placeholders from earlier failed rounds are dropped
         // so repeated retries don't stack failure entries.
         const failText = new Set([t('node.failedPlaceholder'), t('node.emptyResponse')]);
         const kept = versionMode === 'append' || failed
-          ? n.data.responses.map((r, i) => ({ r, q: n.data.questions?.[i], by: n.data.generatedBy?.[i], rs: n.data.reasonings?.[i], at: n.data.generatedAts?.[i], ed: n.data.editedAts?.[i], gw: n.data.gatewaySearches?.[i] })).filter(({ r }) => r && !(failed && failText.has(r)))
+          ? n.data.responses.map((r, i) => ({ r, q: n.data.questions?.[i], by: n.data.generatedBy?.[i], rs: n.data.reasonings?.[i], at: n.data.generatedAts?.[i], ed: n.data.editedAts?.[i], gw: n.data.gatewaySearches?.[i], cth: n.data.codexThreadIds?.[i], ctu: n.data.codexTurnIds?.[i], meta: n.data.generationMetadatas?.[i], commentary: n.data.commentaries?.[i] })).filter(({ r }) => r && !(failed && failText.has(r)))
           : [];
         const now = new Date().toISOString();
         const responses = [...kept.map(({ r }) => r), response];
@@ -186,7 +261,12 @@ export async function runNodeGeneration(
         const reasonings = [...kept.map(({ rs }) => rs), n.data.reasoning || undefined];
         const generatedAts = [...kept.map(({ at }) => at), now];
         const editedAts = [...kept.map(({ ed }) => ed), undefined];
-        return { ...n, data: { ...n.data, response, responses, questions, generatedBy, gatewaySearches, reasonings, generatedAts, editedAts, reasoning: undefined, restreaming: undefined, responseIndex: responses.length - 1, isLoading: false, tokenCount, generationFailed: failed || undefined, references, highlights: pruneHighlights(n.data.highlights, response), lastContextHash: contextHash, lastGeneratedAt: now } };
+        const codexThreadIds = [...kept.map(({ cth }) => cth), codexMetadata.threadId];
+        const codexTurnIds = [...kept.map(({ ctu }) => ctu), codexMetadata.turnId];
+        const generationMetadata = { ...codexMetadata, status: failed ? (codexMetadata.status === 'completed' ? 'incomplete' : codexMetadata.status || 'incomplete') : 'completed' };
+        const generationMetadatas = [...kept.map(({ meta }) => meta), generationMetadata];
+        const commentaries = [...kept.map(({ commentary }) => commentary), n.data.commentary];
+        return { ...n, data: { ...n.data, response, responses, questions, generatedBy, gatewaySearches, reasonings, generatedAts, editedAts, codexThreadIds, codexTurnIds, reasoning: undefined, restreaming: undefined, responseIndex: responses.length - 1, isLoading: false, tokenCount, generationFailed: failed || undefined, generationMetadata, generationMetadatas, commentaries, references, highlights: pruneHighlights(n.data.highlights, response), lastContextHash: contextHash, lastGeneratedAt: now } };
       }),
     }));
   };
@@ -200,7 +280,7 @@ export async function runNodeGeneration(
   const memBlock = !selfData?.stepKind && !selfData?.digestOf ? memoryContextBlock() : null;
   if (memBlock) {
     // Insert AFTER the last assistant turn: the material+chain prefix stays
-    // byte-stable across turns, so provider prompt caches keep hitting.
+    // byte-stable across turns, so Codex prompt caches keep hitting.
     // Memory entries change often — at the front they would invalidate the
     // cached prefix on every write.
     let insertAt = messages.length - 1; // no upstream yet → before the question
@@ -211,23 +291,9 @@ export async function runNodeGeneration(
   }
 
   try {
-    // Context budget: browser-configured models carry their probed window.
-    // When the wired context alone clearly exceeds it, fail fast with the
-    // reason (and no spend) instead of a guaranteed upstream 400. countTokens
-    // errs high on CJK, and an input hugging the window leaves no room for
-    // the answer anyway — so a plain >= is the honest cutoff.
-    const effectiveModel = pinnedModel ?? useUiStore.getState().selectedModel ?? serverDefaultModel;
-    const windowLimit = effectiveModel ? contextLengthFor(effectiveModel) : undefined;
-    if (windowLimit) {
-      const est = countTokens(messages.map((m) => m.content).join('\n'));
-      if (est >= windowLimit) {
-        throw new Error(fmt(t('toast.contextOverWindow'), { est: est.toLocaleString(), model: effectiveModel!, limit: windowLimit.toLocaleString() }));
-      }
-    }
-    // Stream frames arrive at 100+/s on the direct lane (DeepSeek flash
-    // thinking most of all). Committing every frame re-renders the whole
-    // canvas and locks the tab; buffer the latest text and commit at most
-    // every ~100ms (leading + trailing), with a final flush after the await.
+    // Codex can stream many small frames. Committing every one re-renders the
+    // whole canvas, so buffer the latest text and commit at most every ~100ms
+    // (leading + trailing), with a final flush after the await.
     let streamLatest: { response?: string; reasoning?: string } | null = null;
     let streamTimer: number | null = null;
     const commitStream = () => {
@@ -256,7 +322,9 @@ export async function runNodeGeneration(
       commitStream();
     };
 
+    flushPending = flushStream;
     const response = await llmCallStream(messages, (_chunk, fullSoFar) => {
+      latestResponse = fullSoFar;
       pushStream({ response: fullSoFar });
     }, abortController.signal, images, {
       onToolCall: (name, query) => {
@@ -275,7 +343,7 @@ export async function runNodeGeneration(
         if (!isCurrent()) return;
         gatewaySearched = true;
         // Same pattern as tool pings: a placeholder line while the answer
-        // has not started streaming — the gateway searches in silence.
+        // has not started streaming — Codex searches before answering.
         set((state) => ({
           nodes: state.nodes.map((n) =>
             n.id === nodeId && !n.data.response
@@ -284,10 +352,26 @@ export async function runNodeGeneration(
           ),
         }));
       },
-      onSources: (sources) => { references = sources; },
+      onSources: (sources) => {
+        // Deterministic URL snapshots arrive before the Codex stream; live
+        // web-search sources can arrive later. Preserve both, de-duplicated,
+        // so every external input remains visible on the answer card.
+        const merged = [...(references ?? []), ...sources];
+        references = merged.filter((source, index) =>
+          merged.findIndex((candidate) =>
+            source.url && candidate.url ? candidate.url === source.url : candidate.title === source.title
+          ) === index
+        );
+      },
       onRerouted: (_from, to) => { actualModel = to; },
       onImageFallback: (model) => { actualModel = model; },
+      onFinal: (metadata) => {
+        for (const [key, value] of Object.entries(metadata)) if (value !== undefined) codexMetadata = { ...codexMetadata, [key]: value };
+        if (metadata.model) actualModel = metadata.model;
+      },
+      onCommentary: (commentary) => { if (isCurrent()) set(state => ({ nodes: state.nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, commentary } } : n) })); },
       onReasoning: (_chunk, fullSoFar) => {
+        latestReasoning = fullSoFar;
         pushStream({ reasoning: fullSoFar });
       },
     }, (() => {
@@ -297,9 +381,11 @@ export async function runNodeGeneration(
       return {
         web: selfData?.webSearch ?? useUiStore.getState().webSearchEnabled,
         scholar: selfData?.scholarSearch ?? useUiStore.getState().scholarSearchEnabled,
-        mcp: useUiStore.getState().mcpEnabled,
+        // MCP is an explicit server opt-in. Ignore a stale browser toggle
+        // unless /api/models confirms the local Codex runtime exposes it.
+        mcp: modelData?.capabilities?.mcp === true && useUiStore.getState().mcpEnabled,
       };
-    })(), pinnedModel);
+    })(), pinnedModel, codexLink);
     flushStream();
     if (!isCurrent()) return; // superseded while finishing: drop everything
     activeAbortControllers.delete(nodeId);
@@ -320,23 +406,25 @@ export async function runNodeGeneration(
   } catch (err) {
     if (!isCurrent()) return; // superseded: the abort was ours to swallow
     activeAbortControllers.delete(nodeId);
-    const partial = get().nodes.find((n) => n.id === nodeId)?.data.response || '';
+    flushPending();
+    const partial = latestResponse;
+    set(state => ({ nodes: state.nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, reasoning: latestReasoning } } : n) }));
     const isAbort = err instanceof DOMException && err.name === 'AbortError';
     if (isAbort) {
       // User pressed Stop — keep whatever streamed, no error surfacing
-      writeFinal(partial || t('node.stoppedPlaceholder'));
+      codexMetadata.status = 'interrupted';
+      writeFinal(partial || t('node.stoppedPlaceholder'), true);
     } else {
       // Real failure: details go to a toast, the node gets a Retry affordance
       const message = err instanceof Error ? err.message : t('toast.unknownError');
-      if (/no model configured/i.test(message)) {
-        // The one failure with an obvious remedy: summon the key dialog
-        // right here, with a localized line instead of the raw server text.
+      if (/no model configured|codex.*not logged in|codex_not_logged_in|codex.*unavailable|codex_unavailable/i.test(message)) {
+        // The failures with an obvious local remedy open Codex status right
+        // where the generation failed.
         toast('info', t('toast.noModelYet'));
         useUiStore.getState().setApiKeyModalOpen(true);
       } else if (/429|too many requests|rate.?limit|quota/i.test(message)) {
         // Free tiers meter requests per minute — a pause fixes it, and the
-        // raw provider text reads like a failure of the app rather than a
-        // property of the free key. Say what it actually is.
+        // Raw runtime text is less useful than an actionable retry hint.
         toast('info', t('toast.rateLimited'));
       } else {
         toast('error', fmt(t('toast.generationFailed'), { message }));

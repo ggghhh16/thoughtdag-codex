@@ -8,11 +8,41 @@ interface DesktopUpdateEvent {
   percent?: number;
 }
 
+interface DesktopProjectFolder {
+  /** Opaque server registration id; renderer never sends a filesystem path. */
+  id: string;
+  name: string;
+  path: string;
+}
+
+interface DesktopProjectSelection {
+  canceled: boolean;
+  project: DesktopProjectFolder | null;
+}
+
+interface DesktopCodexThreadListOptions {
+  search?: string;
+  cursor?: string;
+  limit?: number;
+  archived?: boolean;
+}
+
+type DesktopLegacyStorageEntry = [key: string, value: unknown];
+
 interface DesktopBridge {
   checkForUpdates: () => Promise<void>;
   downloadUpdate?: () => Promise<void>;
   installUpdate?: () => Promise<void>;
-  onUpdateEvent?: (cb: (e: DesktopUpdateEvent) => void) => void;
+  onUpdateEvent?: (cb: (e: DesktopUpdateEvent) => void) => (() => void);
+  getProjectFolder?: () => Promise<DesktopProjectFolder | null>;
+  selectProjectFolder?: () => Promise<DesktopProjectSelection>;
+  clearProjectFolder?: () => Promise<null>;
+  /** Read-only access to local Codex history; the main process adds the
+   *  desktop control token so it is never exposed to renderer JavaScript. */
+  listCodexThreads?: (options?: DesktopCodexThreadListOptions) => Promise<unknown>;
+  readCodexThread?: (threadId: string) => Promise<unknown>;
+  /** One-shot, allowlisted snapshot from the former 127.0.0.1:31174 origin. */
+  readLegacyStorage31174?: () => Promise<DesktopLegacyStorageEntry[]>;
 }
 
 interface Window {

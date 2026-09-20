@@ -64,19 +64,25 @@ Mind maps are drawn; this map grows. Chat leaves no map at all.
 
 ## Models & search
 
-- **Any model**: nine provider families register from `.env` keys; a toolbar picker switches at any time; text-only models reroute automatically when images appear
-- **Model interface manager**: no `.env` needed; provider presets pin only the endpoint address, and the model list is fetched live from the endpoint's `/models` route (never goes stale); a local Ollama is detected keylessly; a custom-endpoint field catches every other OpenAI-compatible service; keys stay in localStorage + proxy memory, never on disk; with nothing configured the toolbar wears a Connect-a-model button that opens the manager directly
-- **Per-node model override**: any node can pin its own LLM (badge on the card, sibling regenerations inherit it); cheap models for exploration, flagship for the hard steps; every version records which model wrote it
-- **Agentic search**: AI SDK tool loop: web search + arXiv + Semantic Scholar (free APIs), `[n]` citations + persisted references, guaranteed synthesis fallback, per-group toolbar toggles
-- **MCP tool ecosystem**: `mcp.config.json` (stdio + HTTP/SSE transports); tools join the agentic loop with per-call progress; mock server included for testing
-- **Capabilities panel**: search engine choice, scholar status, vision model preference and memory switch in one place, at the model picker's foot
+- **One Codex runtime, two scoped paths**: foreground Q&A uses official Codex App Server persistent threads; background summaries, memory judgments, condensing, and weaving stay in isolated one-shot SDK threads. The browser stores no provider keys and never falls back silently
+- **Graph-aware persistent history**: a card's active answer version maps to one Codex turn and every answer version keeps its own thread/turn IDs. The first ordinary child resumes, siblings and explicit branches fork at the parent turn, and fan-in or an unmapped legacy graph starts anew. If another Codex client has advanced the anchor, the canvas automatically forks there instead of crossing histories
+- **Official-client continuation**: on the same machine and Codex configuration/login, persistent foreground tasks are visible and continuable in the official Codex client. This uses the local Codex task store rather than a separate ThoughtDAG sync service
+- **Models, reasoning, and speed**: the picker uses the live catalog for the current Codex login, allowing Codex-style model, reasoning-level, and Standard/Fast selection. Fast support and copy come from the live model metadata; unsupported models return to Standard. Each answer version retains provenance, and legacy provider pins fall back safely
+- **Native Codex search**: web and scholarly toggles remain; scholarly mode prioritizes arXiv, Semantic Scholar, papers, and primary sources, while search/tool progress continues through the existing stream UI
+- **MCP ecosystem**: off by default; setting `CODEX_ENABLE_MCP=true` opts into the user's Codex MCP configuration. Existing SSE tool events show progress without exposing argument or result bodies in status messages
+- **Image understanding**: pasted images become request-scoped temporary files for Codex and are removed after success, failure, or cancellation
 
 ## Desktop app
 
-- **One download, everything bundled**: the same app in its own window with the local engine inside; no Node, no terminal; macOS builds are signed and notarized by Apple
-- **Updates wait for your click**: the app checks quietly, announces a new version as an in-app notice, and downloads and restarts only on your say-so; a Check-for-updates menu entry shows the version you are on and answers out loud (found / latest / could not check); download progress lives on the Dock icon
-- **Every model gets the full toolset**: on desktop the bundled engine serves keyless web search, scholarly search, MCP tools and the vision reroute to every connected model, including browser-direct-only providers on the web
-- **One-click sign-in via your own browser**: OpenRouter authorization opens in the system browser where you are already signed in; the app picks the result up by itself and lands you on the fresh model list
+- **Runtime included**: the desktop shell starts a loopback Node service and carries the Codex SDK and platform/architecture CLI payload; end users do not install project dependencies
+- **Native login reuse**: desktop builds read the native operating-system Codex session; native Windows and WSL sessions are separate
+- **Native project folders**: select, switch, or clear the Codex working directory from the project menu; paths are registered locally and generation receives only an opaque project ID
+- **Three permission levels**: switch between Read only, Project access, and Full access in the toolbar; the default reliably supports bounded list/read/search, project mode enables project writes/commands with command networking off, and Full access has an orange warning plus confirmation
+- **GitHub Dark**: splash, landing, canvas, nodes, menus, dialogs, timeline, code, and tutorial scenes share one GitHub-style dark semantic palette
+- **Explicit update boundary**: this fork never checks for or installs upstream ThoughtDAG updates; automatic updates stay disabled until its own signed release repository exists
+- **The same safety rails**: the server maps the three-level whitelist to real Codex sandboxes instead of accepting raw low-level settings; model-launched commands inherit only a core environment, background summaries stay read-only, and concurrency/abort/cleanup protections remain
+- **No Windows console flashes**: native Codex and all PowerShell, cmd, git, and other console descendants share one invisible console; sandboxed commands also use an invisible desktop, while a Job Object tears down the full tree on cancellation
+- **Stable desktop storage origin**: the packaged renderer stays on `127.0.0.1:31173` and performs a one-time merge of canvas and attachment data left under the legacy `31174` origin
 
 ## Workbench & data
 
@@ -91,7 +97,7 @@ Mind maps are drawn; this map grows. Chat leaves no map at all.
 - **Automatic folder backup**: grant a folder once and every change debounces into a real `.thoughtdag.json` on disk; point it at a synced directory and it doubles as cross-device sync with zero servers; a toolbar control center shows the last write and backs up every canvas on demand
 - **Event log**: an append-only record of semantic operations (asks, generations, highlights, archiving, undo) with timestamps, metadata-only; travels in backups, exports as CSV for R/Python analysis
 - **Node context menu**: right-click for open panel / reading view / regenerate (in place or as a new node) / copy / duplicate / archive / delete; right-clicking selected text keeps the native menu
-- **Data persistence**: IndexedDB auto-save (1s debounce), survives refresh; multi-canvas projects (create/switch/rename/delete)
+- **Data persistence**: IndexedDB auto-save (1s debounce) retains canvases plus per-answer Codex thread/turn IDs; multi-canvas projects survive refresh and can be created, switched, renamed, or deleted
 - **Export system**: whole-graph JSON backup and import; context-chain / multi-select Markdown export; memory and roles export too: easy in, easy out
 - **Import ChatGPT / Claude exports**: drop conversations.json into Import; edit/regenerate branches are preserved as graph forks, each conversation becomes its own canvas
 - **Undo/Redo**: Cmd+Z / Cmd+Shift+Z, full state snapshots
@@ -115,5 +121,5 @@ Mind maps are drawn; this map grows. Chat leaves no map at all.
 
 ThoughtDAG is an early, actively developed project. This is exactly when feedback matters most:
 
-- 🐛 Hit a bug or a rough edge? [Open an issue](https://github.com/chenxiachan/thoughtdag/issues)
-- 💡 Ideas about thinking-in-graphs? [Start a discussion](https://github.com/chenxiachan/thoughtdag/discussions)
+- 🐛 Report bugs or rough edges in the issue tracker of the repository hosting this fork.
+- 💡 Discuss thinking-in-graphs in that repository's Discussions area.

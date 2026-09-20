@@ -1,0 +1,12 @@
+title = "ThoughtDAG Codex secret scan"
+[extend]
+useDefault = true
+
+# Benchmark cache_key is SHA-256(prompt/model/scorer settings), not a credential.
+# Constrain this exception to that exact field and results path.
+[[allowlists]]
+description = "Public benchmark cache hashes"
+condition = "AND"
+paths = ['''^benchmark/runs/[^/]+/results\.json$''']
+regexTarget = "match"
+regexes = ['''cache_key"\s*:\s*"[a-f0-9]{64}"''']
