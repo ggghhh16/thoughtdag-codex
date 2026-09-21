@@ -8,6 +8,31 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const net = require('net');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
+const projectRegistrations = new Map();
+
+function knownProjectFile() { return path.join(app.getPath('userData'), 'known-project-folders.json'); }
+function pathKey(value) { return process.platform === 'win32' ? path.normalize(value).toLowerCase() : path.normalize(value); }
+function knownProjectPaths() {
+  try { const paths = JSON.parse(fs.readFileSync(knownProjectFile(), 'utf8')); return Array.isArray(paths) ? paths.filter((p) => typeof p === 'string') : []; }
+  catch { return []; }
+}
+function rememberProject(projectPath) {
+  const paths = knownProjectPaths();
+  if (!paths.some((p) => pathKey(p) === pathKey(projectPath))) {
+    paths.push(projectPath);
+    fs.writeFileSync(knownProjectFile(), JSON.stringify(paths, null, 2));
+  }
+}
+function requireKnownProject(value) {
+  if (typeof value !== 'string' || !path.isAbsolute(value)
+    || !knownProjectPaths().some((p) => pathKey(p) === pathKey(value))) throw new Error('Project folder must first be selected in the native folder picker.');
+  const canonical = fs.realpathSync(value);
+  if (pathKey(canonical) !== pathKey(value) || !fs.statSync(canonical).isDirectory()) throw new Error('Project directory identity changed. Select the folder again.');
+  return canonical;
+}
 
 // Development: the repo root (live dist + server.mjs + root node_modules).
 // Packaged: a self-contained payload under Resources — same three files,
@@ -58,6 +83,9 @@ function saveProjectPath(projectPath) {
 }
 
 async function registerProjectDirectory(projectPath) {
+  const canonical = fs.realpathSync(projectPath);
+  const cached = projectRegistrations.get(pathKey(canonical));
+  if (cached) return cached;
   if (!serverPort) throw new Error('Local Codex server is not ready.');
   const response = await fetch(`http://127.0.0.1:${serverPort}/api/desktop/projects/register`, {
     method: 'POST',
@@ -73,7 +101,10 @@ async function registerProjectDirectory(projectPath) {
   if (!project || typeof project.id !== 'string' || typeof project.path !== 'string') {
     throw new Error('Local Codex server returned an invalid project registration.');
   }
-  return { id: project.id, name: project.name || path.basename(project.path), path: project.path };
+  const registered = { id: project.id, name: project.name || path.basename(project.path), path: project.path };
+  rememberProject(registered.path);
+  projectRegistrations.set(pathKey(registered.path), registered);
+  return registered;
 }
 
 async function desktopServerJson(pathname) {
@@ -91,6 +122,7 @@ async function desktopServerJson(pathname) {
 }
 
 async function restoreProjectDirectory() {
+  projectRegistrations.clear();
   currentProject = null;
   const savedPath = readSavedProjectPath();
   if (!savedPath) return;
@@ -327,12 +359,44 @@ function setupDisabledUpdateChannel() {
 }
 
 function setupProjectChannel() {
+  ipcMain.handle('project:activate', async (event, requestedPath) => {
+    assertTrustedRenderer(event);
+    const next = await registerProjectDirectory(requireKnownProject(requestedPath));
+    saveProjectPath(next.path);
+    currentProject = next;
+    return next;
+  });
+  ipcMain.handle('project:open', async (event, requestedPath) => {
+    assertTrustedRenderer(event);
+    const error = await shell.openPath(requireKnownProject(requestedPath));
+    if (error) throw new Error(error);
+  });
+  ipcMain.handle('project:worktree', async (event, requestedPath) => {
+    assertTrustedRenderer(event);
+    const cwd = requireKnownProject(requestedPath);
+    const options = { cwd, windowsHide: true, timeout: 120000, maxBuffer: 1024 * 1024 };
+    await execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], options);
+    const result = await dialog.showSaveDialog(win, {
+      title: '创建永久工作树：选择新目录的位置和名称',
+      defaultPath: path.join(path.dirname(cwd), `${path.basename(cwd)}-worktree`),
+      buttonLabel: '创建工作树',
+      properties: ['createDirectory', 'showOverwriteConfirmation'],
+    });
+    if (result.canceled || !result.filePath) return { canceled: true, project: null };
+    const destination = path.resolve(result.filePath);
+    if (fs.existsSync(destination)) throw new Error('工作树目标目录已存在，请选择一个新的目录名称。');
+    await execFileAsync('git', ['worktree', 'add', '--detach', '--', destination, 'HEAD'], options);
+    return { canceled: false, project: await registerProjectDirectory(destination) };
+  });
   ipcMain.handle('project:get', (event) => {
     assertTrustedRenderer(event);
     return currentProject;
   });
-  ipcMain.handle('project:select', async (event) => {
+  ipcMain.handle('project:select', async (event, options = {}) => {
     assertTrustedRenderer(event);
+    if (!options || typeof options !== 'object' || Array.isArray(options)
+      || Object.keys(options).some((key) => key !== 'activate')
+      || (options.activate !== undefined && typeof options.activate !== 'boolean')) throw new Error('Invalid project picker options.');
     const result = await dialog.showOpenDialog(win, {
       title: '选择 Codex 项目文件夹',
       properties: ['openDirectory'],
@@ -340,8 +404,10 @@ function setupProjectChannel() {
     if (result.canceled || !result.filePaths[0]) return { canceled: true, project: currentProject };
 
     const next = await registerProjectDirectory(result.filePaths[0]);
-    currentProject = next;
-    saveProjectPath(next.path);
+    if (options.activate !== false) {
+      saveProjectPath(next.path);
+      currentProject = next;
+    }
     // Keep earlier opaque registrations alive for already-started requests.
     // They disappear with this local server process and are no longer exposed
     // by the renderer once currentProject changes.

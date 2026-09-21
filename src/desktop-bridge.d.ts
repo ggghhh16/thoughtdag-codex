@@ -35,7 +35,10 @@ interface DesktopBridge {
   installUpdate?: () => Promise<void>;
   onUpdateEvent?: (cb: (e: DesktopUpdateEvent) => void) => (() => void);
   getProjectFolder?: () => Promise<DesktopProjectFolder | null>;
-  selectProjectFolder?: () => Promise<DesktopProjectSelection>;
+  selectProjectFolder?: (options?: { activate?: boolean }) => Promise<DesktopProjectSelection>;
+  activateProjectFolder?: (path: string) => Promise<DesktopProjectFolder>;
+  openProjectFolder?: (path: string) => Promise<void>;
+  createProjectWorktree?: (path: string) => Promise<DesktopProjectSelection>;
   clearProjectFolder?: () => Promise<null>;
   /** Read-only access to local Codex history; the main process adds the
    *  desktop control token so it is never exposed to renderer JavaScript. */

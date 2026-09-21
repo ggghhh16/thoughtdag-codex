@@ -13,7 +13,10 @@ contextBridge.exposeInMainWorld('desktop', {
     return () => ipcRenderer.removeListener('update:event', listener);
   },
   getProjectFolder: () => ipcRenderer.invoke('project:get'),
-  selectProjectFolder: () => ipcRenderer.invoke('project:select'),
+  selectProjectFolder: (options) => ipcRenderer.invoke('project:select', options),
+  activateProjectFolder: (path) => ipcRenderer.invoke('project:activate', path),
+  openProjectFolder: (path) => ipcRenderer.invoke('project:open', path),
+  createProjectWorktree: (path) => ipcRenderer.invoke('project:worktree', path),
   clearProjectFolder: () => ipcRenderer.invoke('project:clear'),
   listCodexThreads: (options) => ipcRenderer.invoke('codex-history:list', options),
   readCodexThread: (threadId) => ipcRenderer.invoke('codex-history:read', threadId),

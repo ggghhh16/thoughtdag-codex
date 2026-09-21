@@ -774,3 +774,14 @@ body.tdag-connecting, body.tdag-connecting * {
 @media (prefers-reduced-motion: reduce) {
   .tdag-flow-ov { animation: none; display: none; }
 }
+
+/* Project tree: compact canvas rows and explicit drag insertion affordances. */
+.canvas-row-action { padding: 4px; border-radius: 4px; color: var(--color-ink-faint); }
+.canvas-row-action:hover { color: var(--color-ink); background: var(--color-wash); }
+.canvas-row-action:disabled { opacity: .4; cursor: default; }
+.canvas-insert-line { position: absolute; left: 0; right: 0; height: 2px; background: var(--color-accent); pointer-events: none; z-index: 2; }
+.canvas-insert-line::before { content: ''; position: absolute; left: -3px; top: -2px; width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); }
+.project-context-action { display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 10px; border-radius: 6px; text-align: left; }
+.project-context-action:hover, .project-context-action:focus-visible { background: var(--color-wash); outline: none; }
+.project-context-action:disabled { opacity: .4; cursor: default; }
+.project-context-action svg { flex-shrink: 0; }
