@@ -1,12 +1,14 @@
 # ThoughtDAG Codex
 
+**简体中文** · [English](README_EN.md)
+
 **把 Codex 对话、项目操作和资料阅读放进可编辑画布的本地工作区。**
 
 你可以从某条回答继续提问或创建分支，把文档接入问题，选择下一轮所需的上下文，并在图中继续处理 Codex 任务。本项目将 ThoughtDAG 的画布对接到官方 Codex App Server 与 SDK。
 
 这是基于 [ThoughtDAG](https://github.com/chenxiachan/thoughtdag) 独立维护的社区衍生版本，与 OpenAI 及 ThoughtDAG 原作者无官方隶属或背书关系。
 
-[English](README.md) · [配置说明](docs/setup_ZH.md) · [安全说明](SECURITY.md) · [上游项目](https://github.com/chenxiachan/thoughtdag)
+[配置说明](docs/setup_ZH.md) · [安全说明](SECURITY.md) · [上游项目](https://github.com/chenxiachan/thoughtdag)
 
 ## 这个版本能做什么
 

@@ -1,45 +1,47 @@
 # ThoughtDAG Codex
 
-**A local Codex workspace with an editable conversation canvas.**
+**简体中文** · [English](README_EN.md)
 
-Branch a Codex conversation, attach source material, choose the context for the next question, and continue a task from the graph. ThoughtDAG Codex connects the ThoughtDAG canvas to the official Codex App Server and SDK.
+**把 Codex 对话、项目操作和资料阅读放进可编辑画布的本地工作区。**
 
-This is an independently maintained community derivative of [ThoughtDAG](https://github.com/chenxiachan/thoughtdag), not an official OpenAI application or an upstream ThoughtDAG release.
+你可以从某条回答继续提问或创建分支，把文档接入问题，选择下一轮所需的上下文，并在图中继续处理 Codex 任务。本项目将 ThoughtDAG 的画布对接到官方 Codex App Server 与 SDK。
 
-[中文说明](README_ZH.md) · [Setup](docs/setup.md) · [Security](SECURITY.md) · [Upstream](https://github.com/chenxiachan/thoughtdag)
+这是基于 [ThoughtDAG](https://github.com/chenxiachan/thoughtdag) 独立维护的社区衍生版本，与 OpenAI 及 ThoughtDAG 原作者无官方隶属或背书关系。
 
-## What this version does
+[配置说明](docs/setup_ZH.md) · [安全说明](SECURITY.md) · [上游项目](https://github.com/chenxiachan/thoughtdag)
 
-- **Run Codex from the canvas.** Foreground answers use persistent Codex threads; background summaries use isolated SDK calls.
-- **Continue and branch tasks.** Continue the main conversation or fork at an earlier answer. Multiple incoming paths start a new thread with the selected graph context.
-- **Import local Codex conversations.** The desktop app lists and imports local tasks. On the same computer and configuration, compatible persistent tasks can also be continued from another Codex client.
-- **Choose a project and permissions.** The desktop folder picker connects a local project. Read only is the default; project access and full access are explicit choices.
-- **Use the models available to your login.** Model, reasoning level and Fast availability come from the runtime; the app does not unlock unavailable account capabilities.
-- **Keep the canvas tools.** Attach PDF, DOCX, images, HTML or web snapshots; edit answers, retain answer versions, arrange branches, and export graph backups or Markdown.
+## 这个版本能做什么
 
-## Usability improvements in this fork
+- **在画布里运行 Codex**：前台问答保留持久任务，自动摘要等后台请求使用隔离的 SDK 调用。
+- **继续或分支处理任务**：继续主对话，也可以从指定回答创建分支；接入多个上下文路径时，用所选图内容创建新任务。
+- **导入本机 Codex 对话**：桌面版可列出和导入本机任务。在同一台电脑、同一份配置下，兼容的持久任务也可在其他 Codex 客户端继续。
+- **选择项目和权限**：桌面版通过原生对话框选择项目目录，默认只读；项目操作和完全访问由用户明确选择。
+- **使用账号实际可用的模型**：模型、思考档位与 Fast 能力从运行时读取，不额外解锁账号未提供的功能。
+- **保留画布与资料能力**：支持 PDF、DOCX、图片、HTML 和网页快照，保留回答版本、编辑内容、排列分支，并导出图备份或 Markdown。
 
-- **Remember where you stopped reading.** Node cards, expanded answers, the side panel and material readers save their scroll positions locally. Return to a node or reopen the app to continue reading; answer versions keep separate positions.
-- **Organize the graph as a tree.** One action arranges conversation branches into a downward tree, aligns continuations and separates sibling branches. Material cards keep their positions, graph relationships stay intact, and the layout can be undone.
-- **Clearer connections between nodes.** Curved connections route around visible cards, while aligned nodes stay connected by straight lines. Select a connection to drag its curve, reset its shape, reverse its direction or delete it; curve adjustments are saved.
-- **Import and export conversations.** Import local Codex tasks in the desktop app, restore ThoughtDAG JSON backups, or import supported ChatGPT/Claude exports. Export the canvas as JSON for backup, or selected nodes and context chains as Markdown for reading and sharing.
-- **Reliable code-block copying.** Copy buttons extract the code text and preserve line breaks. A fallback supports desktop environments that deny the Clipboard API, restores focus and selection, and reports copy failures instead of showing false success.
+## 本版本新增与优化
 
-### Relationship to ThoughtDAG
+- **节点内容浏览进度保存**：节点卡片、展开阅读、侧边面板和资料阅读器会在本机保存滚动位置。切换节点或重新打开应用后可接着阅读，不同回答版本分别保存位置。
+- **树状图整理**：一键将对话按分支整理为向下展开的树状图，主线对齐、同级分支分开排列；保留资料卡片的位置和原有图关系，支持撤销整理。
+- **节点间连线优化**：曲线自动绕开可见卡片，对齐的节点使用直线。选中连线后可以拖动调整曲线、恢复默认形状、反转方向或删除，调整后的曲线会保存。
+- **导入／导出对话**：桌面版可导入本机 Codex 任务；支持恢复 ThoughtDAG JSON 备份，以及导入兼容的 ChatGPT／Claude 导出文件。画布可导出为 JSON 备份，选中节点或上下文链可导出为 Markdown，方便迁移、阅读和分享。
+- **代码块复制修复**：复制按钮提取代码正文并保留换行；桌面环境拒绝 Clipboard API 时自动尝试兼容方式，复制后恢复焦点与选区，失败时显示提示，避免误报成功。
 
-| Area | This Codex integration |
+## 与 ThoughtDAG 的关系
+
+| 方面 | 本 Codex 对接版本 |
 | --- | --- |
-| Foundation | Reuses ThoughtDAG's canvas, document reader and graph interactions |
-| Execution | Uses a local Codex runtime; browser provider-key management is removed |
-| Task storage | Canvas data lives in local IndexedDB; persistent Codex tasks also live in the local Codex task store |
-| Distribution | Maintained and versioned separately; does not use upstream's updater or installers |
-| Hosting | Static hosting is a read-only viewer; it cannot run local Codex |
+| 项目基础 | 沿用 ThoughtDAG 的画布、文档阅读和图交互能力 |
+| 执行方式 | 通过本地 Codex 运行时执行；移除了浏览器端供应商密钥管理 |
+| 任务存储 | 画布使用本机 IndexedDB；持久 Codex 任务还写入本机 Codex 任务存储 |
+| 发布维护 | 独立维护、独立版本，不使用上游的自动更新或安装包 |
+| 在线部署 | 静态托管只提供只读查看，不能运行本地 Codex |
 
-For a new task, the graph selects the supplied context. Resuming a persistent Codex task also retains that task's tool and media history, which may not all be visible in canvas cards. Structural branches and changed paths are handled by the adapter; this is not a claim that every runtime state is represented by a graph edge.
+新任务由画布选择输入上下文。续接已有 Codex 任务时，还会保留该任务的工具和媒体历史，其中一部分可能没有显示在卡片里。适配层负责处理结构分支和路径变化，因此不能把“图上可见内容”理解为运行时全部状态。
 
-## Run from source
+## 从源码运行
 
-Requirements: Node.js **22.12+**, npm, and a Codex login or your own `CODEX_API_KEY`. Model access and usage limits follow that account. Optional Poppler (`pdftoppm` on PATH) enables server-side PDF page images.
+需要 **Node.js 22.12+**、npm，以及可用的 Codex 登录或你自己的 `CODEX_API_KEY`。模型权限和用量限制由账号决定。可选安装 Poppler，并让 `pdftoppm` 位于 PATH 中，以启用服务端 PDF 页面图片渲染。
 
 ```bash
 git clone https://github.com/ggghhh16/thoughtdag-codex.git
@@ -49,40 +51,40 @@ npm run codex:login
 npm run server
 ```
 
-In a second terminal, in the same directory:
+另开一个终端，进入同一目录：
 
 ```bash
 npm run dev
 ```
 
-Open <http://localhost:5173>. Use `npm run codex:status` to check authentication. The pinned runtime reuses the local Codex login/configuration; credentials are not included in this repository. Put optional overrides in a local `.env` based on [.env.example](.env.example).
+打开 <http://localhost:5173>。可用 `npm run codex:status` 检查登录状态。项目使用固定版本的运行时，并复用本机 Codex 登录与配置；仓库不包含登录凭据。需要覆盖配置时，参考 [.env.example](.env.example) 创建仅在本机使用的 `.env`。
 
-### Desktop development
+### 启动桌面开发版
 
 ```bash
 npm --prefix desktop ci
 npm run desktop
 ```
 
-This builds the frontend and starts Electron. Native folder selection and local task import are desktop features. Packaging commands and platform requirements are in [desktop/README.md](desktop/README.md). Source publication does not imply a current, signed installer is available; use only assets released by this repository.
+该命令构建前端并启动 Electron。原生项目目录选择和本机任务导入属于桌面功能。安装包构建方式与平台要求见 [desktop/README.md](desktop/README.md)。源码公开不代表已经提供当前版本的签名安装包；请只使用本仓库发布的附件。
 
-## Permissions and data
+## 权限和数据去向
 
-| Mode | Behavior |
+| 模式 | 实际行为 |
 | --- | --- |
-| Read only (default) | Local shell/edit tools are disabled; the built-in project reader excludes common credential files and stays inside the selected root |
-| Project access | Local commands can write the selected project and a temporary workspace; command network access is disabled. This is a write boundary, not a guarantee that other host files are unreadable |
-| Full access | Local tools can access host files and the network; the UI asks for confirmation |
+| 只读（默认） | 关闭本地命令和编辑工具；内置项目读取工具限定在所选目录内，并排除常见凭据文件 |
+| 项目操作 | 本地命令可写所选项目及临时工作目录，关闭命令联网；这是写入限制，不保证其他本机文件完全不可读 |
+| 完全访问 | 本地工具可访问其他文件与网络；界面会要求确认 |
 
-External MCP integration is **off by default**. It requires `CODEX_ENABLE_MCP=true` and the canvas MCP toggle. External tools have their own capabilities and are not confined by the command filesystem sandbox.
+外部 MCP **默认关闭**，必须同时设置 `CODEX_ENABLE_MCP=true` 并开启画布上的 MCP 开关。外部工具有自己的访问能力，不受本地命令文件沙箱完整约束。
 
-- Canvases and attachments are stored locally. Context, selected attachments and permitted tool results can be sent to the configured Codex service when you ask a question.
-- Web snapshots contact their source websites. HTML reader snapshots block scripts and remote subresources; a page may therefore look different from the live website.
-- The HTTP server binds only to loopback and rejects untrusted Host/Origin values. It is a single-user local application, **not an authenticated multi-user server**; local programs running as your user remain trusted.
-- Backups, exports and share links can contain conversation/document content. Review them before sharing.
-- Runtime configuration, credentials, `.env` files, local conversations and build caches are excluded from publication. See [SECURITY.md](SECURITY.md) for the review scope and limitations.
+- 画布和附件保存在本机。提问时，上下文、选中附件以及被允许的工具结果可能发送到配置的 Codex 服务。
+- 抓取网页会访问来源网站。HTML 快照阅读器禁止脚本和远程子资源，因此显示效果可能与原网页不同。
+- HTTP 服务只监听本机回环地址，并拒绝不可信 Host/Origin。这是单用户本地应用，**没有面向多用户的身份认证**；以你的用户身份运行的本地程序仍属于信任范围。
+- 备份、导出文件和分享链接可能包含对话或文档内容，分享前请检查。
+- 运行时配置、凭据、`.env`、本地对话和构建缓存不属于发布内容。审查范围和限制见 [SECURITY.md](SECURITY.md)。
 
-## Development checks
+## 开发检查
 
 ```bash
 npm test
@@ -91,8 +93,8 @@ npm audit
 npm --prefix desktop audit
 ```
 
-Tests use local fixtures and do not consume model usage. A real model call requires a separately authenticated session. UI smoke tests are available in `scripts/` and may require a Chrome installation.
+测试使用本地样例，不消耗模型额度。真实模型调用需要单独登录。`scripts/` 中另有界面冒烟检查，部分需要本机安装 Chrome。
 
-## Credits and license
+## 致谢与许可
 
-Based on [ThoughtDAG](https://github.com/chenxiachan/thoughtdag) by Xia Chen. The original copyright and [MIT license](LICENSE) are preserved. The official Codex components retain their own licenses, including Apache-2.0 for the SDK. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+项目基于 Xia Chen 的 [ThoughtDAG](https://github.com/chenxiachan/thoughtdag)，保留原版权声明和 [MIT 许可证](LICENSE)。官方 Codex 组件遵循各自许可证，其中 SDK 为 Apache-2.0。参见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

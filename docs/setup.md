@@ -1,6 +1,6 @@
 # Codex setup and architecture
 
-[中文](./setup_ZH.md) · [Back to README](../README.md)
+[中文](./setup_ZH.md) · [Back to README](../README_EN.md)
 
 ## Requirements
 

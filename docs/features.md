@@ -1,6 +1,6 @@
 # Full feature list
 
-[中文](./features_ZH.md) · [Back to README](../README.md)
+[中文](./features_ZH.md) · [Back to README](../README_EN.md)
 
 ## Philosophy
 
