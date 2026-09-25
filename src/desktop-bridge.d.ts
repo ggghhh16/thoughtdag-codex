@@ -30,6 +30,14 @@ interface DesktopCodexThreadListOptions {
 type DesktopLegacyStorageEntry = [key: string, value: unknown];
 
 interface DesktopBridge {
+  textbookOpen?: () => Promise<void>;
+  textbookDock?: (value: boolean) => Promise<boolean>;
+  textbookFiles?: (request: { action: string; lang?: 'en' | 'zh'; libraryId?: string; relativePath?: string; replaceId?: string; version?: string; content?: string }) => Promise<unknown>;
+  textbookCommand?: (command: import('./lib/textbook').ReaderCommand) => Promise<import('./lib/textbook').ReaderReply>;
+  textbookReply?: (id: string, reply: import('./lib/textbook').ReaderReply) => void;
+  textbookPublish?: (snapshot: import('./lib/textbook').ReaderSnapshot) => void;
+  textbookReveal?: (request: { materialId: string; nodeId?: string }) => Promise<void>;
+  onTextbookEvent?: (channel: 'command' | 'snapshot' | 'reveal', cb: (value: unknown) => void) => () => void;
   checkForUpdates: () => Promise<void>;
   downloadUpdate?: () => Promise<void>;
   installUpdate?: () => Promise<void>;

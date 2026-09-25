@@ -33,7 +33,9 @@
       "main.js",
       "preload.js",
       "package.json",
-      "splash.html"
+      "splash.html",
+      "textbook-window.js",
+      "textbook-files.js"
     ],
     "extraResources": [
       {

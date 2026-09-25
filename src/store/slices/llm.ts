@@ -1,3 +1,4 @@
+import { citationMessage, scopeLabels } from '../../lib/textbook';
 import type { StateCreator } from 'zustand';
 import type { ThoughtNode, ThoughtEdge } from '../../types';
 import { generateId } from '../../utils';
@@ -30,6 +31,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
       dragHandle: '.drag-handle',
       data: {
         question,
+        sourceCitation: opts.sourceCitation,
         createdAt: new Date().toISOString(),
         askedAt: new Date().toISOString(),
         model: inheritedModel,
@@ -82,6 +84,14 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     } : null;
 
     let newEdges: ThoughtEdge[] = newEdge ? [...get().edges, newEdge] : get().edges;
+    if (opts.sourceCitation) {
+      const c = opts.sourceCitation;
+      newEdges = [...newEdges, { id: `source-${id}`, source: c.materialId, target: id,
+        sourceHandle: 'branch', targetHandle: 'left', type: 'smoothstep',
+        label: `原文 · ${scopeLabels[c.scope]} · ${c.start}:${c.end}`,
+        style: { stroke: COLORS.warm, strokeDasharray: '3 5' },
+        data: { isCrossLink: true, sourceCitation: { scope: c.scope, start: c.start, end: c.end, version: c.anchor.version } } }];
+    }
     // @-mentions: any mentioned node NOT already flowing into this one gets
     // a real dashed reference edge — @ is the keyboard's way of drawing a
     // wire, never an invisible injection. Ones already upstream stay pure
@@ -150,6 +160,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
 
     // Record the applied role before streaming
     const appliedRole = contextMessages.find((m) => m.role === 'system')?.content || undefined;
+    if (opts.sourceCitation) contextMessages.push({ role: 'user', content: citationMessage(opts.sourceCitation) });
     contextMessages.push({ role: 'user', content: question });
     set((state) => ({
       nodes: state.nodes.map((n) =>
@@ -157,7 +168,13 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
       ),
     }));
 
-    await runNodeGeneration(set, get, id, { question, messages: contextMessages, images: contextImages });
+    if (opts.sourceCitation || mentions?.length) {
+      const exact = buildContext(id, get().nodes.map(n => n.id === id ? { ...n, data: { ...n.data, question: '' } } : n), get().edges, branchContext, undefined, undefined, get().staleIds);
+      exact.messages.push({ role: 'user', content: question });
+      await runNodeGeneration(set, get, id, { question, messages: exact.messages, images: exact.images });
+    } else {
+      await runNodeGeneration(set, get, id, { question, messages: contextMessages, images: contextImages });
+    }
   },
 
   /**
@@ -399,6 +416,8 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
   regenerate: async (nodeId: string) => {
     const node = get().nodes.find((n) => n.id === nodeId);
     if (!node) return;
+
+    if (node.data.sourceCitation) { await get().editQuestion(nodeId, node.data.question); return; }
 
     // Find a structural parent (any incoming edge) for creating sibling
     const parentEdge = get().edges.find((e) => e.target === nodeId);

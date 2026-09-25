@@ -1,3 +1,4 @@
+import { readerText as rt } from '../i18n/reader';
 import { useMemo, useRef, useState, type PointerEvent } from 'react';
 import { BaseEdge, EdgeLabelRenderer, useReactFlow, useStore as useFlowStore, type EdgeProps } from '@xyflow/react';
 import { ArrowLeftRight, Move, RotateCcw, X } from 'lucide-react';
@@ -10,6 +11,7 @@ import { referenceBlockContent } from '../store/context-builder';
 import { countTokens } from '../utils';
 import { useT, fmt } from '../i18n';
 import type { ThoughtEdge, ThoughtNode } from '../types';
+import { scopeLabels } from '../lib/textbook';
 
 /**
  * Custom edge registered under the 'smoothstep' type name (overrides the
@@ -117,6 +119,7 @@ export default function ThoughtEdgeView({
         markerStart={markerStart}
         interactionWidth={Math.max(interactionWidth ?? 20, 24)}
       />
+      {data?.sourceCitation && <EdgeLabelRenderer><span className="nodrag nopan rounded bg-card border border-line px-2 py-1 text-xs text-ink-muted" title={`${rt('原文范围')} ${data.sourceCitation.start}:${data.sourceCitation.end} · ${rt('版本')} ${data.sourceCitation.version.slice(0, 8)}`} style={{ position: 'absolute', transform: `translate(${labelX}px, ${labelY - 24}px) translate(-50%, -50%)`, pointerEvents: 'all' }}>{rt('资料引用')} · {rt(scopeLabels[data.sourceCitation.scope])}</span></EdgeLabelRenderer>}
       {data?.focusRole === 'path' && (
         // Context Focus feed line: bright dots gliding INSIDE the solid
         // stroke (narrower than it, so the line never reads as dashed —
@@ -160,6 +163,7 @@ export default function ThoughtEdgeView({
             <div className="absolute top-9 left-1/2 -translate-x-1/2 flex items-center gap-1 p-1 rounded-full bg-card border border-line shadow-md whitespace-nowrap">
               <button
                 aria-label={t('edge.reverse')}
+                disabled={!!data?.sourceCitation}
                 title={t('edge.reverseTitle')}
                 onClick={e => { e.stopPropagation(); reverseEdge(id); }}
                 className="w-7 h-7 rounded-full flex items-center justify-center text-ink-muted hover:text-accent hover:bg-wash"

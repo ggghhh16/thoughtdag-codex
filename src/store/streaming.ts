@@ -1,5 +1,5 @@
 import type { StoreApi } from 'zustand';
-import { walkUpAncestors } from '../lib/graph';
+import { partitionContext, walkUpAncestors } from '../lib/graph';
 import { upstreamFingerprint } from './context-builder';
 import { pruneHighlights } from '../lib/highlight-match';
 import {
@@ -119,6 +119,9 @@ export function codexLinkForGeneration(
 ): CodexLinkRequest {
   const node = nodes.find((candidate) => candidate.id === nodeId);
   if (!node) return { mode: 'start' };
+
+  // Reconstruct textbook branches from the explicit graph transcript.
+  if (partitionContext(nodeId, nodes, edges).mainline.some(n => n.data.sourceCitation)) return { mode: 'start' };
 
   const incoming = edges.filter((edge) => edge.target === nodeId && !edge.data?.isCrossLink);
   // A multi-parent synthesis has no single persisted conversation to resume.
@@ -277,7 +280,8 @@ export async function runNodeGeneration(
   // fingerprints never see this block (memory edits must not mark answers
   // stale; the block is assembled at generation time, after buildContext).
   const selfData = get().nodes.find((n) => n.id === nodeId)?.data;
-  const memBlock = !selfData?.stepKind && !selfData?.digestOf ? memoryContextBlock() : null;
+  const textbookBranch = partitionContext(nodeId, get().nodes, get().edges).mainline.some(n => n.data.sourceCitation);
+  const memBlock = !textbookBranch && !selfData?.stepKind && !selfData?.digestOf ? memoryContextBlock() : null;
   if (memBlock) {
     // Insert AFTER the last assistant turn: the material+chain prefix stays
     // byte-stable across turns, so Codex prompt caches keep hitting.

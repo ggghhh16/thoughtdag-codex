@@ -1,3 +1,4 @@
+import { revealTextbook } from '../lib/textbook-host';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Crosshair, FileText, Highlighter, Link2, Loader2, Pencil, RefreshCw, ScanText, Send, Sparkles, StickyNote, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
@@ -67,7 +68,10 @@ export default function MaterialReader({ onLocate }: { onLocate: (id: string) =>
     // the node can be deleted from the canvas while the reader is open
     if (readerNodeId && !node) useUiStore.getState().setReaderNodeId(null);
   }, [readerNodeId, node]);
-  if (!node) return null;
+  useEffect(() => {
+    if (node?.data.textbook) { revealTextbook(node.id); useUiStore.getState().setReaderNodeId(null); }
+  }, [node]);
+  if (!node || node.data.textbook) return null;
   return <ReaderOverlay key={node.id} node={node} onLocate={onLocate} />;
 }
 

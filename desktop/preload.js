@@ -4,6 +4,19 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktop', {
+  textbookOpen: () => ipcRenderer.invoke('textbook:open'),
+  textbookDock: (value) => ipcRenderer.invoke('textbook:dock', value),
+  textbookFiles: (request) => ipcRenderer.invoke('textbook:files', request),
+  textbookCommand: (command) => ipcRenderer.invoke('textbook:command', command),
+  textbookReply: (id, reply) => ipcRenderer.send('textbook:reply', { id, reply }),
+  textbookPublish: (snapshot) => ipcRenderer.send('textbook:publish', snapshot),
+  textbookReveal: (request) => ipcRenderer.invoke('textbook:reveal', request),
+  onTextbookEvent: (channel, cb) => {
+    if (!['command', 'snapshot', 'reveal'].includes(channel)) throw new Error('Invalid textbook channel');
+    const listener = (_event, data) => cb(data);
+    ipcRenderer.on('textbook:' + channel, listener);
+    return () => ipcRenderer.removeListener('textbook:' + channel, listener);
+  },
   // This fork has no trusted update feed yet. Keep only the check bridge so
   // the existing menu can report that state without exposing install actions.
   checkForUpdates: () => ipcRenderer.invoke('update:check'),

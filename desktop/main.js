@@ -2,7 +2,8 @@
 // the bundled server.mjs runs as a child, serves the built dist on a
 // local port, and this window points at it. No second stack: everything
 // the web app is, the desktop app is.
-const { app, BrowserWindow, dialog, shell, utilityProcess, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, shell, utilityProcess, ipcMain, screen } = require('electron');
+const { setupTextbookWindow } = require('./textbook-window');
 const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
@@ -469,6 +470,7 @@ if (!lock) {
     if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
   });
   app.whenReady().then(() => {
+    setupTextbookWindow({ app, BrowserWindow, ipcMain, dialog, screen, shell, getWindow: () => win, getPort: () => serverPort, assertTrustedRenderer });
     setupDisabledUpdateChannel();
     setupProjectChannel();
     setupCodexHistoryChannel();

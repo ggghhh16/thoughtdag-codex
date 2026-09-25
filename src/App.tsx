@@ -1,8 +1,10 @@
+import { readerText as rt } from './i18n/reader';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
   Controls,
+  ControlButton,
   MiniMap,
   SelectionMode,
   type OnNodesChange,
@@ -1108,7 +1110,9 @@ function Canvas() {
         <ZoomTierTag />
         <ThoughtMapPill />
         <TimelineBar />
-        <Controls position="bottom-left" />
+        <Controls position="bottom-left">
+          {window.desktop?.textbookOpen && <ControlButton style={{ order: -1 }} className="textbook-launch-control" title={rt('Markdown 阅读')} aria-label={rt('Markdown 阅读')} onClick={() => void window.desktop!.textbookOpen!()}><BookOpen size={16} /></ControlButton>}
+        </Controls>
         {nodes.length > 0 && <MiniMap
           nodeColor={(node) => {
             const data = node.data as Record<string, unknown>;
@@ -1873,6 +1877,7 @@ function Canvas() {
 
       {/* Material reading overlay: select a passage, ask, the node lands on
           the canvas immediately (a view onto the material, not a container) */}
+      <TextbookLocate onLocate={(id) => { const n = useStore.getState().nodes.find(n => n.id === id); if (n) centerNode(n, { zoom: 1 }); }} />
       <MaterialReader onLocate={(id) => {
         const n = useStore.getState().nodes.find((x) => x.id === id);
         if (n) {
@@ -1974,5 +1979,14 @@ function ZoomTierTag() {
   useEffect(() => {
     (document.querySelector('.react-flow') as HTMLElement | null)?.style.setProperty('--tdag-zoom', String(zoom));
   }, [zoom]);
+  return null;
+}
+
+function TextbookLocate({ onLocate }: { onLocate: (id: string) => void }) {
+  useEffect(() => {
+    const listener = (event: Event) => onLocate((event as CustomEvent<string>).detail);
+    window.addEventListener('textbook-locate', listener);
+    return () => window.removeEventListener('textbook-locate', listener);
+  }, [onLocate]);
   return null;
 }

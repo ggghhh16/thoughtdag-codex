@@ -1,3 +1,4 @@
+import { citationMessage } from '../lib/textbook';
 import type { ThoughtNode } from '../types';
 import type { ThoughtEdge } from '../types';
 import { partitionContext, type ContextReference } from '../lib/graph';
@@ -276,6 +277,7 @@ export function buildContext(
     // itself already passed through it, so descendants keep their ancestry)
     if (node.data.archived) continue;
     pushAttachments(node);
+    if (node.data.sourceCitation) messages.push({ role: 'user', content: citationMessage(node.data.sourceCitation) });
     if (node.data.question) {
       messages.push({ role: 'user', content: node.data.question });
     }

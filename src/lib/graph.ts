@@ -22,7 +22,7 @@ export function walkUpAncestors(
     const node = nodes.find((n) => n.id === id);
     if (!node) return;
     for (const edge of edges) {
-      if (edge.target !== id) continue;
+      if (edge.target !== id || edge.data?.sourceCitation) continue;
       visitedEdgeIds.add(edge.id);
       walkUp(edge.source);
     }
@@ -73,7 +73,7 @@ export function partitionContext(
   edges: ThoughtEdge[],
 ): ContextPartition {
   const structural = edges.filter((e) => !e.data?.isCrossLink);
-  const crossLinks = edges.filter((e) => e.data?.isCrossLink);
+  const crossLinks = edges.filter((e) => e.data?.isCrossLink && !e.data?.sourceCitation);
 
   // Mainline: structural walk only (content ancestors pulled out as materials)
   const { ordered: structuralOrdered } = walkUpAncestors(nodeId, nodes, structural);

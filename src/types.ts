@@ -36,6 +36,10 @@ export interface Reference {
 }
 
 export interface ThoughtData extends Record<string, unknown> {
+  textbook?: import('./lib/textbook').TextbookDocument;
+  sourceCitation?: import('./lib/textbook').SourceCitation;
+  sourceRelocation?: import('./lib/textbook').SourceAnchor;
+  sourceMark?: { number?: number; hidden?: boolean };
   question: string;
   response: string;
   responses: string[];
@@ -185,6 +189,7 @@ export interface ThoughtEdge extends Edge {
     routeSide?: 'auto' | 'left' | 'right';
     /** Draggable curve midpoint, relative to the midpoint of its endpoints. */
     routeBend?: { x: number; y: number };
+    sourceCitation?: { scope: import('./lib/textbook').CitationScope; start: number; end: number; version: string };
     isCrossLink?: boolean;
     isBranchFromSelection?: boolean;
     /** Watch edge: watched node → evaluator. Treated as a cross-link for

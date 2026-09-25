@@ -1,5 +1,8 @@
+import { rehypeSource } from '../lib/rehype-source';
 import { memo, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import type { Components } from 'react-markdown';
+import type { PluggableList } from 'unified';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeHighlight from 'rehype-highlight';
@@ -26,7 +29,15 @@ function normalizeMath(src: string): string {
       .replace(/\\\((.+?)\\\)/g, (_, m) => `$${m.trim()}$`)))
     .join('');
 }
-const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitize, rehypeHighlight, rehypeKatex];
+// Keep UTF-16 source offsets stable in the textbook reader. Delimiter changes
+// use equal-length replacements; math output itself remains a read-only view.
+function normalizeSourceMath(src: string): string {
+  return src.split(/(`{3,}[\s\S]*?`{3,}|~{3,}[\s\S]*?~{3,}|`[^`\n]*`)/g)
+    .map((part, i) => i % 2 ? part : part
+      .replace(/\\\[([\s\S]*?)\\\]/g, (_, value) => `$$${value}$$`)
+      .replace(/\\\((.+?)\\\)/g, (_, value) => `$${value}$  `)).join('');
+}
+const REHYPE_PLUGINS: PluggableList = [rehypeRaw, rehypeSanitize, rehypeHighlight, rehypeKatex];
 
 // Code blocks get a hover copy button (no toast: too frequent an action —
 // the icon flashes a check instead).
@@ -82,10 +93,10 @@ const COMPONENTS = { pre: Pre, table: Table };
 // memo: the unified parse + KaTeX layout is the most expensive render on a
 // card, and cards re-render far more often than their text changes (every
 // streamed chunk anywhere re-renders every card). Same string → skip.
-export const Markdown = memo(function Markdown({ children, marks }: { children: string; marks?: MarkOptions }) {
+export const Markdown = memo(function Markdown({ children, marks, sourceMode, components }: { children: string; marks?: MarkOptions; sourceMode?: import('../lib/rehype-source').SourceOptions; components?: Components }) {
   return (
-    <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={marks ? [...REHYPE_PLUGINS, [rehypeMarks, marks]] : REHYPE_PLUGINS} components={COMPONENTS}>
-      {normalizeMath(children)}
+    <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={[...REHYPE_PLUGINS, ...(marks ? [[rehypeMarks, marks] as [typeof rehypeMarks, MarkOptions]] : []), ...(sourceMode ? [[rehypeSource, sourceMode] as [typeof rehypeSource, import('../lib/rehype-source').SourceOptions]] : [])]} components={components ? { ...COMPONENTS, ...components } : COMPONENTS}>
+      {sourceMode ? normalizeSourceMath(children) : normalizeMath(children)}
     </ReactMarkdown>
   );
 });

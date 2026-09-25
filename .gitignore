@@ -53,3 +53,9 @@ video/public/audio/
 
 # Context-operations benchmark: published (reference gate closed 2026-08-16,
 # report live). In-capture run dirs join as they complete.
+
+# Isolated Markdown reader acceptance artifacts
+.electron-test/
+.desktop-smoke-*/
+.test-cache*/
+.textbook-files-test-*/

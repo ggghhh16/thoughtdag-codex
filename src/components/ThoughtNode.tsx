@@ -1,3 +1,6 @@
+import { readerText as rt } from '../i18n/reader';
+import { partitionContext } from '../lib/graph';
+import { revealTextbook } from '../lib/textbook-host';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Handle, Position, useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import { ReverseHandles } from './ReverseHandles';
@@ -108,6 +111,7 @@ export default function ThoughtNode({ id, data }: NodeProps<ThoughtNodeType>) {
   const condenseLit = useUiStore((s) => s.condenseHighlightIds.includes(id));
   // Page-anchored questions wear a p.N chip that reopens the reader right
   // there — the material node this question grew from is the reader target
+  const sourceNode = useStore(s => [...partitionContext(id, s.nodes, s.edges).mainline].reverse().find(n => n.data.sourceCitation));
   const anchorMaterialId = useStore((s) => {
     if (!data.anchor) return null;
     const e = s.edges.find((e) =>
@@ -373,6 +377,7 @@ export default function ThoughtNode({ id, data }: NodeProps<ThoughtNodeType>) {
       )}
       <ReverseHandles glyph={glyphTier} large={zoomedOut} />
       <Handle type="target" position={Position.Top} id="top" className={`!bg-accent !border-2 !border-white tdag-handle ${zoomedOut ? '!w-6 !h-6 tdag-handle-lg' : '!w-3.5 !h-3.5'}`} />
+      {sourceNode?.data.sourceCitation && <button className="nodrag nopan text-xs text-accent px-3 py-1" onClick={e => { e.stopPropagation(); revealTextbook(sourceNode.data.sourceCitation!.materialId, sourceNode.id); }}>{rt('返回原文')}</button>}
       {/* Side anchors: NOT interaction targets — the system routes dashed
           reference edges through them so cross-chain lines never cut across
           the vertical chain grammar. Two handles for people (top in, bottom

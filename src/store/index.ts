@@ -22,6 +22,7 @@ export function stripTransient(nodes: ThoughtNode[]): ThoughtNode[] {
     selected: false,
     data: {
       ...n.data,
+      ...(n.data.sourceCitation && n.data.isLoading ? { generationFailed: true } : {}),
       isLoading: false,
       isEditing: false,
       isEditingResponse: false,

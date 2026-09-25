@@ -20,7 +20,8 @@
     "preview": "vite preview",
     "desktop": "npm run build && npm --prefix desktop start",
     "test:integrity": "node --experimental-strip-types --test scripts/output-integrity.test.mjs",
-    "test:security": "node --test scripts/http-security.test.mjs scripts/safe-remote-url.test.mjs && node scripts/test-markdown-marks.mjs"
+    "test:security": "node --test scripts/http-security.test.mjs scripts/safe-remote-url.test.mjs && node scripts/test-markdown-marks.mjs",
+    "test:textbook": "node --test scripts/textbook.test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",
@@ -51,7 +52,10 @@
     "remark-math": "^6.0.0",
     "tailwindcss": "^4.1.18",
     "turndown": "^7.2.4",
-    "zustand": "^5.0.11"
+    "zustand": "^5.0.11",
+    "unified": "^11.0.5",
+    "remark-parse": "^11.0.0",
+    "micromark-util-decode-string": "^2.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

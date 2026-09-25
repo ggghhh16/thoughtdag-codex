@@ -4,6 +4,9 @@ import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/inter/index.css'
 import '@fontsource-variable/jetbrains-mono/index.css'
 import App from './App'
+import TextbookReader from './components/TextbookReader'
+import { bootTextbookHost } from './lib/textbook-host'
+const isTextbook = new URLSearchParams(window.location.search).has('textbook')
 import { bootProjects } from './store/projects'
 import { isViewerMode, bootViewer } from './lib/viewer'
 import { initAppearance } from './lib/appearance'
@@ -21,6 +24,7 @@ async function bootAuthorMode(): Promise<void> {
   // hydrates an active canvas.
   await migrateDesktopLegacyStorage()
   await bootProjects()
+  bootTextbookHost()
   // Ask the browser to mark this origin's storage persistent — exempts the
   // IndexedDB canvases from best-effort eviction under disk pressure.
   // Browsers grant it silently based on engagement; a refusal is harmless.
@@ -28,7 +32,8 @@ async function bootAuthorMode(): Promise<void> {
   void import('./lib/local-backup').then((m) => m.bootAutoBackup())
 }
 
-if (isViewerMode) void bootViewer()
+if (isTextbook) { /* Reader is a command-only client: never hydrate or persist the graph. */ }
+else if (isViewerMode) void bootViewer()
 else void bootAuthorMode()
 
 // A long-lived tab keeps running the bundle it loaded; nudge when a newer
@@ -44,7 +49,6 @@ window.addEventListener('hashchange', () => {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
-    <GenerationInteractionDialog />
+    {isTextbook ? <TextbookReader /> : <><App /><GenerationInteractionDialog /></>}
   </StrictMode>,
 )

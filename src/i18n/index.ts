@@ -56,3 +56,10 @@ export function useDateLocale(): string {
   const lang = useI18n((s) => s.lang);
   return lang === 'zh' ? 'zh-CN' : 'en-US';
 }
+
+// Reader windows share language preferences, without sharing graph stores.
+if (typeof window !== 'undefined') window.addEventListener?.('storage', event => {
+  if (event.key === LANG_KEY && (event.newValue === 'en' || event.newValue === 'zh')) {
+    useI18n.setState({ lang: event.newValue });
+  }
+});

@@ -63,6 +63,7 @@ export interface NodeSlice {
 }
 
 export interface AddQuestionOptions {
+  sourceCitation?: import('../lib/textbook').SourceCitation;
   parentId?: string;
   /** Selected text this node explores; also marks the node as an orange branch. */
   branchContext?: string;

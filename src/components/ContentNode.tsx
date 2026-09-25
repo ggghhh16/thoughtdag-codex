@@ -1,3 +1,4 @@
+import { readerText as rt } from '../i18n/reader';
 import { useEffect, useRef, useState } from 'react';
 import { Handle, NodeResizeControl, Position, useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import { ReverseHandles } from './ReverseHandles';
@@ -109,7 +110,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
         onDoubleClick={(e) => {
           e.stopPropagation();
           // documents open where they are read; notes zoom to working scale
-          if (kind === 'file' || kind === 'link') useUiStore.getState().setReaderNodeId(id);
+          if (data.textbook || kind === 'file' || kind === 'link') useUiStore.getState().setReaderNodeId(id);
           else rf.setCenter((nodePos?.x ?? 0) + 200, (nodePos?.y ?? 0) + 120, { zoom: 1, duration: 300 });
         }}
         title={`${t(kind === 'file' ? 'glyph.file' : kind === 'link' ? 'glyph.link' : 'glyph.note')}\n${kind === 'file' ? (attachments[0]?.name ?? '') : kind === 'link' ? (data.linkTitle || data.linkUrl || '') : data.question.replace(/\s+/g, ' ').slice(0, 120)}`}>
@@ -135,7 +136,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
       onClick={() => setSelectedNodeId(id)}
       onDoubleClick={() => {
         // notes keep dblclick=edit (on the body); files and links open the reader
-        if (kind !== 'note') useUiStore.getState().setReaderNodeId(id);
+        if (data.textbook || kind !== 'note') useUiStore.getState().setReaderNodeId(id);
       }}
       onDrop={async (e) => {
         if (kind !== 'file' || isViewerMode) return;
@@ -202,7 +203,13 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
       {/* Body: grows with content by default; when the card is resized the
           body becomes the scroll region (wheel scrolls text, not zoom) */}
       <div ref={readingRef} className="px-4 py-3 nodrag flex-1 min-h-0 overflow-y-auto nowheel">
-        {kind === 'note' && (
+        {data.textbook && <div className="space-y-2 text-sm text-ink">
+          <strong>{data.textbook.title}</strong>
+          <p className="text-xs text-ink-muted">{data.textbook.relativePath} · {data.textbook.version.slice(0, 8)}</p>
+          <button className="text-accent" onClick={() => useUiStore.getState().setReaderNodeId(id)}>{rt('打开阅读')}</button>
+        </div>}
+
+        {kind === 'note' && !data.textbook && (
           editing ? (
             <textarea
               value={draft}
@@ -384,7 +391,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
             {wireState === 'none:0' ? (
               <p className="text-2xs text-amber-700 leading-snug">{t('content.wireNone')}</p>
             ) : wireState === 'quote:0' ? (
-              <p className="text-2xs text-amber-700 leading-snug">{t('content.wireQuoteOnly')}</p>
+              <p className="text-2xs text-amber-700 leading-snug">{data.textbook ? rt('按各问题的引用范围发送原文') : t('content.wireQuoteOnly')}</p>
             ) : (
               <p className="text-2xs text-ink-faint leading-snug">{fmt(t('content.wireFull'), { n: wireState.split(':')[1] })}</p>
             )}

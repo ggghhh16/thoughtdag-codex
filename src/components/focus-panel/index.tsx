@@ -1,3 +1,6 @@
+import { readerText as rt } from '../../i18n/reader';
+import { revealTextbook } from '../../lib/textbook-host';
+import { scopeLabels } from '../../lib/textbook';
 import { useState } from 'react';
 import { useReadingPosition } from '../../lib/use-reading-position';
 import { X } from 'lucide-react';
@@ -92,6 +95,8 @@ export default function FocusPanel({ onFocusNode }: { onFocusNode?: (id: string)
   const partition = partitionContext(selectedNodeId!, nodes, edges);
   const { layerTokens } = buildContext(selectedNodeId!, nodes, edges);
   const totalContextTokens = layerTokens.material + layerTokens.reference + layerTokens.chain;
+  const sourceNode = [...partition.mainline].reverse().find(n => n.data.sourceCitation);
+  const sourceCitation = sourceNode?.data.sourceCitation;
   const highlightedTexts = new Set(data.highlights.map((h) => h.text));
 
   return (
@@ -130,6 +135,11 @@ export default function FocusPanel({ onFocusNode }: { onFocusNode?: (id: string)
 
       {/* Scrollable content: one card per section */}
       <div ref={readingRef} data-reading-surface="panel" className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5">
+        {sourceCitation && <div className="rounded-lg border border-line p-3 text-xs">
+          <button className="text-accent" onClick={() => revealTextbook(sourceCitation.materialId, sourceNode!.id)}>{rt('返回原文')} · {sourceCitation.anchor.relativePath}</button>
+          <details><summary>{rt('提问时引用')} · {rt(scopeLabels[sourceCitation.scope])}</summary><pre className="whitespace-pre-wrap">{sourceCitation.content}</pre></details>
+        </div>}
+        {data.textbook && <button className="text-accent" onClick={() => revealTextbook(node.id)}>{rt('打开 Markdown 阅读窗')}</button>}
         <QuestionSection
           key={`q-${selectedNodeId}`}
           nodeId={selectedNodeId!}
